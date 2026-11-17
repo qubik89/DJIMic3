@@ -78,16 +78,34 @@ the AppImage, install the rule by hand (see [Platform notes](#platform-notes)),
 
 ## Supported devices
 
-| Device | Status |
-| --- | --- |
-| **DJI Mic 3** (receiver `2ca3:4015`, `2ca3:4115` in 4-channel mode) | Full control, tested with firmware 03.01.00.10 and two transmitters. Up to four transmitters are supported but only two were tested. |
-| **DJI Mic Mini** / **Mic Mini 2** transmitters (receiver `2ca3:4011`) | Supported by the original project (v1 and v2 firmware). |
+The app identifies the receiver when it connects (several share a USB id) and
+shows only the controls that receiver and each connected transmitter support.
 
-Not available on the Mic 3 because the hardware doesn't offer it: Safety Track
-(DJI replaced it with 32-bit float internal recording). Not yet implemented:
-timecode, monitor source selection, dual-file recording, formatting the
-transmitters' storage, and changing the indoor/outdoor environment (it's
-shown, but has to be changed on the receiver).
+| Receiver | USB id | Status |
+| --- | --- | --- |
+| **DJI Mic 3** | `2ca3:4015` (`4115` in 4-channel mode) | Full control, **tested** with firmware 03.01.00.10 and two transmitters |
+| **DJI Mic Mini** | `2ca3:4011` | Supported by the original project (v1 and v2 firmware) |
+| **DJI Mic Series Mobile Receiver** | `2ca3:4011` | Receiver gain, headphone volume, read-only noise cancelling (set with its O/L/H switch). Based on hardware-tested work by others; not tested here |
+| **DJI Mic Mini 2S** | `2ca3:4015` / `4115` | Same protocol as the Mic 3, plus Safety Track, automatic recording modes and dual-file recording. Based on [dji-mic-mo](https://github.com/usokawa/dji-mic-mo) and [lavboard](https://github.com/kroqdotdev/lavboard); not tested here |
+
+| Transmitter | What you can control from the app |
+| --- | --- |
+| DJI Mic 3 | Mute, internal recording, voice tone, input gain, 32-bit float, loop and automatic recording |
+| DJI Mic Mini 2S | Same as the Mic 3 |
+| DJI Mic 2 (through a Mic Mini or Mobile receiver) | Mute, internal recording, 32-bit float, vibration, record on power-on, REC button; validated by [DJI-Mic-Utility](https://github.com/nicolasmmb/DJI-Mic-Utility) |
+| DJI Mic Mini 2 | Voice tone |
+| DJI Mic Mini | Basic settings |
+
+Not supported: the **DJI Mic 2's own receiver** and the original **DJI Mic**
+(2021) — no USB control interface has been documented for them. Not
+available on the Mic 3 because the hardware doesn't offer it: Safety Track.
+Not yet implemented: timecode, monitor source selection, formatting the
+transmitters' storage, and changing the Mic 3's indoor/outdoor environment
+(it's shown, but has to be changed on the receiver).
+
+Untested combinations only send commands that other projects have confirmed
+on real hardware, and the device's answer is checked: a rejected setting
+shows an error instead of failing silently.
 
 Battery percentages are estimates: the microphones only report seven battery
 levels. Level-meter dB values are approximate too.
@@ -170,9 +188,13 @@ learned about the Mic 3, is documented in [PROTOCOL.md](PROTOCOL.md).
 
 - [ShadowBitBasher/DJI-Mic-Control](https://github.com/ShadowBitBasher/DJI-Mic-Control):
   the original app, protocol work and Mic Mini support.
-- [SanMurakami/mic3-bridge](https://github.com/SanMurakami/mic3-bridge) and
-  [usokawa/dji-mic-mo](https://github.com/usokawa/dji-mic-mo): command ids that
-  were cross-checked while mapping the Mic 3.
+- [SanMurakami/mic3-bridge](https://github.com/SanMurakami/mic3-bridge),
+  [usokawa/dji-mic-mo](https://github.com/usokawa/dji-mic-mo),
+  [kroqdotdev/lavboard](https://github.com/kroqdotdev/lavboard),
+  [piedol/lavdeck](https://github.com/piedol/lavdeck),
+  [nicolasmmb/DJI-Mic-Utility](https://github.com/nicolasmmb/DJI-Mic-Utility) and
+  the Mobile Receiver proposal in the upstream repository (PR #4): protocol
+  details for the Mic 3, Mini 2S, Mobile Receiver and Mic 2 transmitters.
 - Translation structure based on the Simplified Chinese proposal in the
   upstream repository (PR #3).
 

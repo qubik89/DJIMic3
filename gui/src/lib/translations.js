@@ -834,6 +834,44 @@ Object.assign(nl, {
   "Record via TX button": "Opnemen met TX-knop"
 });
 
+
+// Strings added with multi-model support.
+Object.assign(es, {
+  "Auto recording": "Grabación automática",
+  "Dual-file recording": "Grabación en doble archivo",
+  "On power-on": "Al encender",
+  "With receiver": "Con el receptor",
+  "Use the O/L/H switch on the receiver to change noise cancelling.": "Usa el interruptor O/L/H del receptor para cambiar la cancelación de ruido."
+});
+Object.assign(fr, {
+  "Auto recording": "Enregistrement automatique",
+  "Dual-file recording": "Enregistrement double fichier",
+  "On power-on": "À l'allumage",
+  "With receiver": "Avec le récepteur",
+  "Use the O/L/H switch on the receiver to change noise cancelling.": "Utilisez le commutateur O/L/H du récepteur pour changer la réduction de bruit."
+});
+Object.assign(it, {
+  "Auto recording": "Registrazione automatica",
+  "Dual-file recording": "Registrazione a doppio file",
+  "On power-on": "All'accensione",
+  "With receiver": "Con il ricevitore",
+  "Use the O/L/H switch on the receiver to change noise cancelling.": "Usa il selettore O/L/H del ricevitore per cambiare la cancellazione del rumore."
+});
+Object.assign(de, {
+  "Auto recording": "Automatische Aufnahme",
+  "Dual-file recording": "Aufnahme in zwei Dateien",
+  "On power-on": "Beim Einschalten",
+  "With receiver": "Mit dem Empfänger",
+  "Use the O/L/H switch on the receiver to change noise cancelling.": "Ändere die Rauschunterdrückung mit dem O/L/H-Schalter am Empfänger."
+});
+Object.assign(nl, {
+  "Auto recording": "Automatisch opnemen",
+  "Dual-file recording": "Opname in twee bestanden",
+  "On power-on": "Bij aanzetten",
+  "With receiver": "Met de ontvanger",
+  "Use the O/L/H switch on the receiver to change noise cancelling.": "Gebruik de O/L/H-schakelaar op de ontvanger om de ruisonderdrukking te wijzigen."
+});
+
 export const DICTIONARIES = { en: {}, "es-ES": es, fr, it, de, nl };
 
 /** Translate an English source string, filling `{name}` placeholders. */

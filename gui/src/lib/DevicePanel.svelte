@@ -48,6 +48,8 @@
     "startup-recording": "Record on power-on",
     "low-power-recording": "Low-battery auto record",
     "rec-stop": "Record via TX button",
+    "auto-record": "Auto recording",
+    "dual-file": "Dual-file recording",
   };
   const GROUP_LABELS = { "Power & Startup": "Power & startup", "Internal Recording": "Internal recording" };
   const labelOf = (s) => $t(LABELS[s.id] ?? s.label);
@@ -61,9 +63,14 @@
   const isTxTargeted = (s) => s.v2_target === "tx";
   // Everything not on a card, in declared order, grouped into tabs.
   const tabSettings = $derived(settings.filter((s) => !CARD_IDS.has(s.id) && !isTxTargeted(s)));
-  const groups = $derived([...new Set(tabSettings.map((s) => s.group))]);
+  const groups = $derived([
+    ...new Set(tabSettings.filter((s) => values[s.id] !== undefined).map((s) => s.group)),
+  ]);
   const activeTab = $derived(groups.includes(tab) ? tab : groups[0]);
-  const hasNc = $derived(!!settingsById["noise-cancel-power"] || !!settingsById["noise-cancel"]);
+  const hasNc = $derived(
+    (!!settingsById["noise-cancel-power"] && values["noise-cancel-power"] !== undefined) ||
+      (!!settingsById["noise-cancel"] && values["noise-cancel"] !== undefined),
+  );
   const ncInTab = $derived(hasNc && (settingsById["noise-cancel-power"] ?? settingsById["noise-cancel"]).group === activeTab);
   // Display order within a tab; ids not listed keep the model's order after these.
   const ORDER = ["low-cut", "noise-cancel-button", "tx-clip-control", "clip-limiter", "loudness-balance", "safety-track"];
@@ -71,6 +78,8 @@
   const rows = $derived(
     tabSettings
       .filter((s) => s.group === activeTab && s.id !== "noise-cancel" && s.id !== "noise-cancel-power")
+      // Only what the device reports (e.g. transmitter-dependent settings).
+      .filter((s) => values[s.id] !== undefined)
       .map((s, i) => ({ s, i }))
       .sort((a, b) => rank(a.s.id) - rank(b.s.id) || a.i - b.i)
       .map(({ s }) => s),
@@ -79,6 +88,8 @@
   // ---- Locks (unchanged rules) ---------------------------------------------
   function lockReason(s) {
     if (!s) return null;
+    // Read-only on this model (e.g. a hardware switch on the receiver).
+    if (s.locked) return $t(s.locked);
     if (status.protocol_version === 1 && s.v1_command == null) {
       return $t("Requires protocol v2, please update your firmware");
     }
@@ -129,13 +140,21 @@
   );
   const connectedTx = $derived(visibleTx.filter(({ tx }) => tx));
   // Raw level units: the Mic 3 reports ~0–100, the Mic Mini ~0x14–0x4f.
-  const levelMax = $derived(device.model_id === "dji-mic-3" ? 100 : 80);
+  const levelMax = $derived(device.model_id === "dji-mic-3" || device.model_id === "dji-mic-mini-2s" ? 100 : 80);
   const levelOf = (tx) => (tx?.level == null ? null : tx.level / levelMax);
-  const txValue = (tx, id) => (id === "voice-tone" ? tx.settings?.[id] ?? tx.voice_tone : tx.settings?.[id]);
-  const txPictogram = (tx) => {
-    if (tx?.product_name === "DJI Mic Mini 2") return "mic-mini-2-tx";
-    return `${device.pictogram_key}-tx`;
+  // Per-transmitter values are only present when that transmitter supports
+  // the setting (the decoders decide from its model).
+  const txValue = (tx, id) => tx?.settings?.[id];
+  // Artwork by the model each transmitter reports; receivers can mix models.
+  const TX_PICTOGRAMS = {
+    "DJI Mic Mini": "mic-mini-tx",
+    "DJI Mic Mini 2": "mic-mini-2-tx",
+    "DJI Mic Mini 2S": "mic-mini-2s-tx",
+    "DJI Mic 2": "mic-2-tx",
+    "DJI Mic 3": "mic-3-tx",
   };
+  const txPictogram = (tx) => TX_PICTOGRAMS[tx?.product_name] ?? `${device.pictogram_key}-tx`;
+  const txSubtitle = (tx) => [tx?.product_name, tx?.serial].filter(Boolean).join(" · ");
   const hoursLeft = (tenths) => $t("{h} h left", { h: (tenths / 10).toFixed(1) });
 
   // Local recording timers: the device doesn't report elapsed time, so the
@@ -168,41 +187,48 @@
   const blinkOn = $derived(Math.floor(now / 500) % 2 === 0);
 
   // ---- Quick actions --------------------------------------------------------
-  const canMute = $derived(!!settingsById["mute"] && connectedTx.length > 0);
-  const canRecord = $derived(!!settingsById["record"] && connectedTx.length > 0);
-  const allMuted = $derived(canMute && connectedTx.every(({ tx }) => txValue(tx, "mute") === "on"));
-  const allRecording = $derived(canRecord && connectedTx.every(({ tx }) => txValue(tx, "record") === "on"));
+  // Only transmitters that report mute / internal recording take part.
+  const mutable = $derived(connectedTx.filter(({ tx }) => txValue(tx, "mute") !== undefined));
+  const recordable = $derived(connectedTx.filter(({ tx }) => txValue(tx, "record") !== undefined));
+  const canMute = $derived(!!settingsById["mute"] && mutable.length > 0);
+  const canRecord = $derived(!!settingsById["record"] && recordable.length > 0);
+  const allMuted = $derived(canMute && mutable.every(({ tx }) => txValue(tx, "mute") === "on"));
+  const allRecording = $derived(canRecord && recordable.every(({ tx }) => txValue(tx, "record") === "on"));
   const firstRecStart = $derived(
-    Math.min(...connectedTx.map(({ i }) => recStartedAt[i] ?? now)),
+    Math.min(...recordable.map(({ i }) => recStartedAt[i] ?? now)),
   );
 
   async function muteAll() {
     const target = allMuted ? "off" : "on";
-    for (const { tx, i } of connectedTx) {
+    for (const { tx, i } of mutable) {
       if (txValue(tx, "mute") !== target) await onchangeTx?.(i, "mute", target);
     }
   }
   async function recordAll() {
     if (allRecording) {
-      for (const { i } of connectedTx) await onchangeTx?.(i, "record", "off");
+      for (const { i } of recordable) await onchangeTx?.(i, "record", "off");
       return;
     }
-    for (const { tx, i } of connectedTx) {
+    for (const { tx, i } of recordable) {
       if (txValue(tx, "record") !== "on") await onchangeTx?.(i, "record", "on");
     }
     ontoast?.($t("Internal recording started on all transmitters"));
   }
 
   // ---- Scenes ---------------------------------------------------------------
+  // Skip settings this device doesn't report or can't write.
+  const toneTx = $derived(connectedTx.filter(({ tx }) => txValue(tx, "voice-tone") !== undefined));
   const sceneEntries = (sc) =>
     Object.entries(sc.set).filter(([id]) =>
-      id === "voice-tone" ? !!settingsById[id] && connectedTx.length > 0 : !!settingsById[id],
+      id === "voice-tone"
+        ? !!settingsById[id] && toneTx.length > 0
+        : !!settingsById[id] && !settingsById[id].locked && values[id] !== undefined,
     );
   function sceneMatches(sc) {
     const entries = sceneEntries(sc);
     if (entries.length === 0) return false;
     return entries.every(([id, v]) =>
-      id === "voice-tone" ? connectedTx.every(({ tx }) => txValue(tx, id) === v) : values[id] === v,
+      id === "voice-tone" ? toneTx.every(({ tx }) => txValue(tx, id) === v) : values[id] === v,
     );
   }
   const activeScene = $derived(SCENES.find(sceneMatches)?.id ?? null);
@@ -211,7 +237,7 @@
     let n = 0;
     for (const [id, v] of sceneEntries(sc)) {
       if (id === "voice-tone") {
-        for (const { tx, i } of connectedTx) {
+        for (const { tx, i } of toneTx) {
           if (txValue(tx, id) !== v) {
             n++;
             await onchangeTx?.(i, id, v);
@@ -369,8 +395,8 @@
             {#if tx}<DevicePicto pictogram={txPictogram(tx)} size={40} />{/if}
           </div>
           <div class="titles">
-            <div class="title">{tx?.product_name && device.model_id !== "dji-mic-3" ? `${tx.product_name} (TX${i + 1})` : `TX${i + 1}`}</div>
-            {#if tx?.serial}<div class="mono-sub">{tx.serial}</div>{/if}
+            <div class="title">TX{i + 1}</div>
+            {#if txSubtitle(tx)}<div class="mono-sub">{txSubtitle(tx)}</div>{/if}
           </div>
           {#if tx}
             {@render battery(tx.battery, !!tx.charging, tx.rec_remaining != null ? hoursLeft(tx.rec_remaining) : null)}
@@ -386,15 +412,15 @@
             <LevelMeter level={levelOf(tx)} {muted} />
           </div>
 
-          {#if settingsById["mute"] || settingsById["record"]}
+          {#if (settingsById["mute"] && txValue(tx, "mute") !== undefined) || (settingsById["record"] && txValue(tx, "record") !== undefined)}
             <div class="btn-row">
-              {#if settingsById["mute"]}
+              {#if settingsById["mute"] && txValue(tx, "mute") !== undefined}
                 <button class="sbtn" class:warn={muted} onclick={() => onchangeTx?.(i, "mute", muted ? "off" : "on")}>
                   {@render micIcon(muted)}
                   {muted ? $t("Muted") : $t("Mute")}
                 </button>
               {/if}
-              {#if settingsById["record"]}
+              {#if settingsById["record"] && txValue(tx, "record") !== undefined}
                 <button class="sbtn" class:rec={recording} onclick={() => onchangeTx?.(i, "record", recording ? "off" : "on")}>
                   {#if recording}
                     {@render recDot(true)}

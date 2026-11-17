@@ -38,6 +38,10 @@ pub struct Actor {
     pub cmd_tx: async_channel::Sender<Command>,
     pub status: Arc<Mutex<DeviceStatus>>,
     pub alive: Arc<AtomicBool>,
+    /// The model currently driving this device. Starts as the one matched by
+    /// USB id and may be replaced once the receiver identifies itself (see
+    /// `DeviceModel::refine`).
+    pub model: Arc<Mutex<&'static dyn DeviceModel>>,
     /// Unix-millis timestamp of the last decoded heartbeat (0 = none yet).
     pub last_seen: Arc<AtomicU64>,
 }
@@ -78,25 +82,28 @@ pub fn spawn(model: &'static dyn DeviceModel, iface: Interface) -> Actor {
     let status = Arc::new(Mutex::new(DeviceStatus::disconnected(model.id())));
     let alive = Arc::new(AtomicBool::new(true));
     let last_seen = Arc::new(AtomicU64::new(0));
+    let model_cell = Arc::new(Mutex::new(model));
 
     let status_thread = status.clone();
+    let model_thread = model_cell.clone();
     let alive_thread = alive.clone();
     let last_seen_thread = last_seen.clone();
     std::thread::spawn(move || {
-        future::block_on(run(model, iface, cmd_rx, status_thread, last_seen_thread));
+        future::block_on(run(model_thread, iface, cmd_rx, status_thread, last_seen_thread));
         alive_thread.store(false, Ordering::Relaxed);
     });
 
-    Actor { cmd_tx, status, alive, last_seen }
+    Actor { cmd_tx, status, alive, last_seen, model: model_cell }
 }
 
 async fn run(
-    model: &'static dyn DeviceModel,
+    model_cell: Arc<Mutex<&'static dyn DeviceModel>>,
     iface: Interface,
     cmd_rx: async_channel::Receiver<Command>,
     status: Arc<Mutex<DeviceStatus>>,
     last_seen: Arc<AtomicU64>,
 ) {
+    let mut model = *model_cell.lock().unwrap();
     let ep_in = model.bulk_in();
     let ep_out = model.bulk_out();
     let mut seq: u16 = 1;
@@ -157,6 +164,11 @@ async fn run(
                     if let Some(d) = packet::heartbeat_dialect(&frame) {
                         dialect = d;
                     }
+                    // The "get version" answer names the receiver's hardware.
+                    if let Some(name) = packet::parse_version_response(&frame) {
+                        let mut st = status.lock().unwrap();
+                        st.rx.get_or_insert_with(protocol::RxInfo::unknown).hardware = Some(name);
+                    }
                     if packet::frame_kind(&frame) == packet::FrameKind::Ack {
                         let ack_seq = u16::from_le_bytes([frame[6], frame[7]]);
                         if pending.as_ref().is_some_and(|p| p.seq == ack_seq) {
@@ -179,12 +191,26 @@ async fn run(
                             hex(&frame),
                         );
                     }
-                    if let Some(new_status) = new_status {
+                    if let Some(mut new_status) = new_status {
+                        // Switch to the model that fits once the receiver
+                        // has identified itself. Models that share a USB id
+                        // share the transport too, so the open interface
+                        // stays valid.
+                        if let Some(refined) = model.refine(&new_status) {
+                            if refined.id() != model.id() {
+                                if debug {
+                                    eprintln!("[model] {} -> {}", model.id(), refined.id());
+                                }
+                                model = refined;
+                                *model_cell.lock().unwrap() = refined;
+                                new_status.model_id = refined.id().to_string();
+                            }
+                        }
                         *status.lock().unwrap() = new_status;
                         last_seen.store(now_millis(), Ordering::Relaxed);
                         if !connected_once {
                             connected_once = true;
-                            connect_queue = model.connect_commands(seq);
+                            connect_queue = model.connect_commands(seq, dialect);
                             seq = seq.wrapping_add(connect_queue.len() as u16);
                             connect_queue.reverse();
                         }

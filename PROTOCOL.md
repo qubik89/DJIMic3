@@ -660,3 +660,60 @@ Two read-only requests (documented for the Mobile RX by
 
 The Mic 3 receiver never sends a product-name record (`0x06`) for itself; its
 transmitters don't either, so they show as "TX1"/"TX2".
+
+---
+
+## Receiver families and model detection
+
+| USB id | Interface | Receivers | How the app tells them apart |
+| --- | --- | --- | --- |
+| `2ca3:4011` | 6 (bulk `0x06`/`0x86`) | DJI Mic Mini, DJI Mic Series Mobile Receiver | The Mobile RX reports the product name `DJI Mic Mini 2` for itself (identity record `0x06`, unit 0); the Mic Mini reports `DJI Mic Mini` |
+| `2ca3:4015`, `4115` | 4 alt 1 (bulk `0x01`/`0x81`) | DJI Mic 3, DJI Mic Mini 2S | "Get version" hardware name: `DM303_RX` is the Mic 3; any other answer (or an RX name containing "Mini 2S") is the Mini 2S |
+
+The app opens a receiver with the model matched by USB id and switches to
+the right one as soon as the receiver identifies itself; the transport is the
+same within a family, so the open interface is kept.
+
+### Mobile Receiver (sources: upstream PR #4, piedol/lavdeck — both hardware-tested)
+
+- Receiver gain `0x0039` (receiver target, −12…+12 in 6 dB steps), status
+  offset 22; monitoring gain `0x0026` (1 dB steps), status offset 27.
+- Noise cancelling is set by the O/L/H switch on the receiver. Its state is
+  read from the first connected transmitter's slot (`+7` bit `0x01` on,
+  `+6` bit `0x20` strong); writes are refused.
+- Bus-powered: no auto-off and no camera power sync.
+- It accepts Mic Mini, Mini 2, Mini 2S, Mic 2 and Mic 3 transmitters.
+
+### Transmitter capabilities by model
+
+Transmitters report a product name in the identity push. The 32-byte status
+slot has the same layout on all of them; which fields are meaningful depends
+on the model:
+
+| Transmitter | Extra fields and commands |
+| --- | --- |
+| `DJI Mic Mini` | none beyond the Mic Mini table above |
+| `DJI Mic Mini 2` | voice tone |
+| `DJI Mic 2` | mute (`0x0009`, per TX, `+6` bit `0x04`), internal recording (`0x0002`, per TX, `+9` bit `0x10`), 32-bit float, vibration, REC button and record on power-on (broadcast), recording time (`+14`/`+16`). Voice tone and gain are ACKed but don't change the status, so they aren't offered. Noise-cancel writes are rejected by the Mobile RX. Source: nicolasmmb/DJI-Mic-Utility (hardware-tested) |
+| `DJI Mic Mini 2S`, `DJI Mic 3` | everything above plus voice tone, input gain (`0x0039` per TX, `+13`) and loop recording |
+
+### DJI Mic Mini 2S receiver (sources: usokawa/dji-mic-mo, kroqdotdev/lavboard)
+
+Same interface, framing and status layout as the Mic 3 receiver, without
+lossless audio, the environment setting or the receiver/monitoring gains.
+Differences in settings:
+
+| Setting | Cmd | Values | Readback |
+| --- | --- | --- | --- |
+| Safety Track | `0x0021` | `0x00` off, `0x01` on | header offset 48 bit `0x40` |
+| Automatic recording | `0x003e` | `0x00` off, `0x01` on power-on, `0x02` with the receiver | first TX slot `+31` bits `0x10` / `0x20` |
+| Dual-file recording | `0x003d` | `0x00` off, `0x02` on | first TX slot `+31` bit `0x80` |
+| Low-battery auto record | `0x002b` | as on the Mic 3 | `+11` bit `0x10` |
+
+Not tested on hardware by this project.
+
+### Not supported
+
+No USB control interface has been documented for the DJI Mic 2's own
+receiver or for the original DJI Mic (2021). The Mic 2's USB ids seen in the
+wild (`2ca3:002d`, `2ca3:0a69`) are file-transfer (MTP) modes.

@@ -69,8 +69,11 @@ static VOICE_TONE_OPTS: [SettingOption; 3] = [
 const G_AUDIO: &str = "Audio";
 const G_POWER: &str = "Power & Startup";
 const G_DEVICE: &str = "Device";
+const G_REC: &str = "Internal Recording";
+const G_TX: &str = "Transmitter";
+static OFF_ON: [SettingOption; 2] = off_on();
 
-pub(super) static SETTINGS: [Setting; 13] = [
+pub(super) static SETTINGS: [Setting; 21] = [
     Setting {
         id: "noise-cancel",
         label: "Noise Cancel",
@@ -82,6 +85,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &NC_OPTS,
         exclusive_with: &[],
         note: None,
+        locked: None,
     },
     Setting {
         id: "noise-cancel-power",
@@ -96,6 +100,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &NC_POWER_OPTS,
         exclusive_with: &[],
         note: None,
+        locked: None,
     },
     Setting {
         id: "noise-cancel-button",
@@ -111,6 +116,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &NC_BUTTON_OPTS,
         exclusive_with: &[],
         note: None,
+        locked: None,
     },
     Setting {
         id: "low-cut",
@@ -123,6 +129,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &LOW_CUT_OPTS,
         exclusive_with: &[],
         note: None,
+        locked: None,
     },
     Setting {
         id: "stereo",
@@ -137,6 +144,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         // disables the other on the device.
         exclusive_with: &["safety-track"],
         note: None,
+        locked: None,
     },
     Setting {
         id: "safety-track",
@@ -149,6 +157,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &SAFETY_OPTS,
         exclusive_with: &["stereo"],
         note: None,
+        locked: None,
     },
     Setting {
         id: "clip-limiter",
@@ -161,6 +170,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &CLIP_OPTS,
         exclusive_with: &[],
         note: None,
+        locked: None,
     },
     Setting {
         id: "auto-off-15m",
@@ -173,6 +183,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &AUTO_OFF_OPTS,
         exclusive_with: &[],
         note: None,
+        locked: None,
     },
     Setting {
         id: "tx-auto-off-15m",
@@ -188,6 +199,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &AUTO_OFF_OPTS,
         exclusive_with: &[],
         note: None,
+        locked: None,
     },
     Setting {
         id: "camera-power",
@@ -200,6 +212,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &CAMERA_OPTS,
         exclusive_with: &[],
         note: None,
+        locked: None,
     },
     Setting {
         id: "plug-free",
@@ -212,6 +225,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &PLUG_FREE_OPTS,
         exclusive_with: &[],
         note: Some("Changing this reboots the receiver."),
+        locked: None,
     },
     Setting {
         id: "mic-leds",
@@ -226,6 +240,7 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &LED_OPTS,
         exclusive_with: &[],
         note: None,
+        locked: None,
     },
     Setting {
         id: "voice-tone",
@@ -239,6 +254,113 @@ pub(super) static SETTINGS: [Setting; 13] = [
         options: &VOICE_TONE_OPTS,
         exclusive_with: &[],
         note: None,
+        locked: None,
+    },
+    // Only reported (and shown) when a transmitter that has them is
+    // connected: DJI Mic 2, Mic Mini 2S or Mic 3 (see `tx_caps`).
+    Setting {
+        id: "vibration",
+        label: "TX Vibration",
+        group: G_DEVICE,
+        kind: SettingKind::Toggle,
+        v1_command: None,
+        v2_command: 0x0004,
+        v2_target: TARGET_TX,
+        options: &OFF_ON,
+        exclusive_with: &[],
+        note: None,
+        locked: None,
+    },
+    Setting {
+        id: "float32",
+        label: "32-bit Float",
+        group: G_REC,
+        kind: SettingKind::Toggle,
+        v1_command: None,
+        v2_command: 0x000c,
+        v2_target: TARGET_TX,
+        options: &OFF_ON,
+        exclusive_with: &[],
+        note: None,
+        locked: None,
+    },
+    Setting {
+        id: "loop-recording",
+        label: "Loop Recording",
+        group: G_REC,
+        kind: SettingKind::Toggle,
+        v1_command: None,
+        v2_command: 0x002a,
+        v2_target: TARGET_TX,
+        options: &OFF_ON,
+        exclusive_with: &[],
+        note: None,
+        locked: None,
+    },
+    Setting {
+        id: "startup-recording",
+        label: "Record on Power-On",
+        group: G_REC,
+        kind: SettingKind::Toggle,
+        v1_command: None,
+        v2_command: 0x002e,
+        v2_target: TARGET_TX,
+        options: &OFF_ON,
+        exclusive_with: &[],
+        note: None,
+        locked: None,
+    },
+    Setting {
+        id: "rec-stop",
+        label: "Record via TX Button",
+        group: G_REC,
+        kind: SettingKind::Toggle,
+        v1_command: None,
+        v2_command: 0x000b,
+        v2_target: TARGET_TX,
+        options: &OFF_ON,
+        exclusive_with: &[],
+        note: None,
+        locked: None,
+    },
+    Setting {
+        id: "mute",
+        label: "Mute",
+        group: G_TX,
+        kind: SettingKind::Toggle,
+        v1_command: None,
+        v2_command: 0x0009,
+        v2_target: TARGET_TX_ONE,
+        options: &OFF_ON,
+        exclusive_with: &[],
+        note: None,
+        locked: None,
+    },
+    Setting {
+        id: "record",
+        label: "Recording",
+        group: G_TX,
+        kind: SettingKind::Toggle,
+        v1_command: None,
+        v2_command: 0x0002,
+        v2_target: TARGET_TX_ONE,
+        options: &super::mic3::RECORD_OPTS,
+        exclusive_with: &[],
+        note: None,
+        locked: None,
+    },
+    Setting {
+        id: "tx-gain",
+        label: "Gain",
+        group: G_TX,
+        kind: SettingKind::Select,
+        v1_command: None,
+        v2_command: 0x0039,
+        v2_target: TARGET_TX_ONE,
+        options: &super::mic3::GAIN_1DB_OPTS,
+        exclusive_with: &[],
+        note: None,
+        locked: None,
     },
 ];
 
@@ -435,6 +557,9 @@ fn decode_v2_status(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
     // unlike `tx_flags`/`low_cut_flags` above — each present slot's own bits
     // are read individually, keyed by that slot's own physical unit byte at
     // `+1`.
+    // Recording-related settings shared by every transmitter, taken from the
+    // first transmitter that reports them.
+    let mut shared_ext: Option<(TxCaps, Vec<u8>)> = None;
     for slot_pos in 0..tx_count {
         let slot_off = V2_HEADER_LEN + V2_TX_SLOT_LEN * slot_pos;
         let unit = f[slot_off + 1];
@@ -454,6 +579,30 @@ fn decode_v2_status(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
             let battery_flags = f[slot_off + 7];
             tx.charging = Some(battery_flags & 0x02 != 0);
             tx.battery = Some((battery_flags >> 2) & 0x07);
+
+            // What else this transmitter supports depends on its model,
+            // which it reports by name (see `tx_caps`).
+            let slot = &f[slot_off..slot_off + V2_TX_SLOT_LEN];
+            let caps = tx_caps(tx.product_name.as_deref()).unwrap_or_default();
+            if caps.voice_tone {
+                if let Some(tone) = tx.voice_tone.clone() {
+                    tx.settings.insert("voice-tone".into(), tone);
+                }
+            }
+            if caps.extended {
+                tx.settings.insert("mute".into(), on_off(slot[6] & 0x04 != 0));
+                tx.settings.insert("record".into(), on_off(slot[9] & 0x10 != 0));
+                tx.rec_total = Some(u16::from_le_bytes([slot[14], slot[15]]));
+                tx.rec_remaining = Some(u16::from_le_bytes([slot[16], slot[17]]));
+                if shared_ext.is_none() {
+                    shared_ext = Some((caps, slot.to_vec()));
+                }
+            }
+            if caps.gain {
+                if let Some(v) = super::mic3::gain_slug(slot[13]) {
+                    tx.settings.insert("tx-gain".into(), v);
+                }
+            }
         }
     }
     status.rx =
@@ -475,6 +624,15 @@ fn decode_v2_status(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
     }
     if let Some(lc) = low_cut_flags {
         s.insert("low-cut".into(), on_off(lc & 0x20 != 0));
+    }
+    if let Some((caps, slot)) = shared_ext {
+        s.insert("vibration".into(), on_off(slot[9] & 0x01 != 0));
+        s.insert("float32".into(), on_off(slot[9] & 0x08 != 0));
+        s.insert("rec-stop".into(), on_off(slot[11] & 0x20 != 0));
+        s.insert("startup-recording".into(), on_off(slot[8] & 0x80 != 0));
+        if caps.loop_recording {
+            s.insert("loop-recording".into(), on_off(slot[11] & 0x08 != 0));
+        }
     }
 
     Some(status)
@@ -499,6 +657,39 @@ fn decode_v2_status(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
 // - `0x04` (a 6-character hex-like id) also appears in the identity push but
 //   isn't modelled by `DeviceStatus` and is skipped.
 const RECORDS_START: usize = 14;
+
+/// What a transmitter supports beyond the Mic Mini basics, by the product
+/// name it reports. Sources: DJI Mic 2 transmitters validated through a
+/// Mobile RX by nicolasmmb/DJI-Mic-Utility; Mini 2S per usokawa/dji-mic-mo and
+/// kroqdotdev/lavboard; Mic 3 tested directly (see `PROTOCOL.md`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct TxCaps {
+    /// Standard / Rich / Bright (`0x0029`).
+    pub voice_tone: bool,
+    /// Mute, internal recording, vibration, 32-bit float, REC stop and
+    /// record on power-on, plus recording time left.
+    pub extended: bool,
+    /// Input gain in 1 dB steps (`0x0039` per transmitter).
+    pub gain: bool,
+    /// Loop recording (`0x002a`).
+    pub loop_recording: bool,
+}
+
+pub(super) const TX_CAPS_FULL: TxCaps =
+    TxCaps { voice_tone: true, extended: true, gain: true, loop_recording: true };
+
+/// `None` for a name this table doesn't know (or no name yet).
+pub(super) fn tx_caps(name: Option<&str>) -> Option<TxCaps> {
+    Some(match name? {
+        "DJI Mic Mini" => TxCaps::default(),
+        "DJI Mic Mini 2" => TxCaps { voice_tone: true, ..TxCaps::default() },
+        // Voice tone and gain are ACKed by Mic 2 transmitters but don't
+        // change their status, so they aren't offered.
+        "DJI Mic 2" => TxCaps { extended: true, ..TxCaps::default() },
+        "DJI Mic Mini 2S" | "DJI Mic 3" => TX_CAPS_FULL,
+        _ => return None,
+    })
+}
 
 /// Map a record's transmitter unit byte to a `DeviceStatus::tx` index. Units
 /// are a bitmask — `1`, `2`, `4`, `8` for TX1–TX4 — which for the first two
@@ -589,6 +780,10 @@ fn decode_v2_records(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> 
                 }
                 matched = true;
             }
+            0x06 if index == 0 => {
+                status.rx.get_or_insert_with(RxInfo::unknown).product_name = Some(read_ascii_field(data));
+                matched = true;
+            }
             0x06 if tx_slot(index).is_some() => {
                 let i = tx_slot(index).unwrap();
                 if let Some(slot) = status.tx.get_mut(i) {
@@ -633,6 +828,9 @@ impl DeviceModel for MicMini {
     }
     fn usb_ids(&self) -> &'static [(u16, u16)] {
         &[(0x2ca3, 0x4011)]
+    }
+    fn refine(&self, status: &DeviceStatus) -> Option<&'static dyn DeviceModel> {
+        super::mobile_rx::is_mobile_receiver(status).then_some(&super::MobileRx as &'static dyn DeviceModel)
     }
     fn interface(&self) -> u8 {
         6

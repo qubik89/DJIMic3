@@ -73,6 +73,10 @@ pub struct Setting {
     pub exclusive_with: &'static [&'static str],
     /// Optional caveat shown next to the control (e.g. reboot warning).
     pub note: Option<&'static str>,
+    /// Set when the device reports this setting but it can't be changed
+    /// over USB on this model (e.g. a hardware switch); the reason is shown
+    /// instead and writes are refused.
+    pub locked: Option<&'static str>,
 }
 
 impl Setting {

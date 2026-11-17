@@ -19,11 +19,16 @@ const LIVE_WINDOW_MS: u64 = 1500;
 
 /// One tracked, opened device.
 struct Handle {
-    model: &'static dyn DeviceModel,
     actor: Actor,
 }
 
 impl Handle {
+    /// The model currently driving the device (it can change once the
+    /// receiver identifies itself).
+    fn model(&self) -> &'static dyn DeviceModel {
+        *self.actor.model.lock().unwrap()
+    }
+
     /// True if a heartbeat was decoded within [`LIVE_WINDOW_MS`].
     fn is_live(&self) -> bool {
         let last = self.actor.last_seen.load(Ordering::Relaxed);
@@ -138,7 +143,7 @@ impl DeviceManager {
             match opened {
                 Ok(iface) => {
                     let actor = actor::spawn(model, iface);
-                    handles.insert(id, Handle { model, actor });
+                    handles.insert(id, Handle { actor });
                 }
                 Err(e) => {
                     if e.kind() == ErrorKind::PermissionDenied {
@@ -171,12 +176,12 @@ impl DeviceManager {
                 let st = h.actor.status.lock().unwrap();
                 DeviceSummary {
                     id: id.clone(),
-                    model_id: h.model.id().to_string(),
-                    model_name: h.model.name().to_string(),
-                    pictogram_key: h.model.pictogram_key().to_string(),
+                    model_id: h.model().id().to_string(),
+                    model_name: h.model().name().to_string(),
+                    pictogram_key: h.model().pictogram_key().to_string(),
                     connected: live,
                     rx_serial: st.rx.as_ref().and_then(|r| r.serial.clone()),
-                    max_tx: h.model.max_tx(),
+                    max_tx: h.model().max_tx(),
                     tx: std::array::from_fn(|i| {
                         st.tx[i].as_ref().map(|t| TxBattery {
                             battery: t.battery,
@@ -215,7 +220,7 @@ impl DeviceManager {
     pub fn settings(&self, id: &str) -> Result<&'static [Setting]> {
         let handles = self.handles.lock().unwrap();
         let h = handles.get(id).ok_or_else(|| DeviceError::NotFound(id.to_string()))?;
-        Ok(h.model.settings())
+        Ok(h.model().settings())
     }
 
     /// Apply `value` to `setting` on device `id`, blocking until acknowledged.
@@ -243,11 +248,14 @@ impl DeviceManager {
 
             // Validate up-front for clear errors without a round-trip.
             let desc = h
-                .model
+                .model()
                 .settings()
                 .iter()
                 .find(|s| s.id == setting)
                 .ok_or_else(|| DeviceError::UnknownSetting(setting.to_string()))?;
+            if let Some(reason) = desc.locked {
+                return Err(DeviceError::Locked(reason.to_string()));
+            }
             if desc.option(value).is_none() {
                 return Err(DeviceError::UnknownValue {
                     setting: setting.to_string(),

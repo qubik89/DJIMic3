@@ -28,3 +28,9 @@ anything else (or not yet known) falls back to the base model's TX artwork.
 `mic-3-rx.png` / `mic-3-tx.png` are DJI Mic 3 product photos with the
 background removed. The Mic 3 never reports a transmitter product name, so
 its TX cards use `mic-3-tx` once the transmitter's serial has arrived.
+
+Other product photos (background removed): `mic-mini-2s-tx.png`,
+`mic-2-tx.png`, `mobile-rx.png` (pictogram key `mobile`). The Mic Mini 2S
+receiver uses the Mic Mini receiver's photo (`mic-mini-2s-rx.png`); they
+share the same body. Transmitter cards pick artwork by the product name each
+transmitter reports (`TX_PICTOGRAMS` in `DevicePanel.svelte`).

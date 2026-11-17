@@ -8,9 +8,11 @@
 
 mod mic3;
 mod mic_mini;
+mod mobile_rx;
 
-pub use mic3::Mic3;
+pub use mic3::{Mic3, MicMini2S};
 pub use mic_mini::MicMini;
+pub use mobile_rx::MobileRx;
 
 use crate::packet::{self, Dialect};
 use crate::settings::Setting;
@@ -47,11 +49,22 @@ pub trait DeviceModel: Send + Sync {
     fn max_tx(&self) -> usize {
         2
     }
-    /// Packets to send once, right after the device starts streaming (e.g. a
-    /// clock sync). `seq` is the first sequence number to use; each packet
-    /// takes the next one.
-    fn connect_commands(&self, _seq: u16) -> Vec<Vec<u8>> {
-        Vec::new()
+    /// Packets to send once, right after the device starts streaming.
+    /// `seq` is the first sequence number to use; each packet takes the next
+    /// one. By default, v2 firmware is asked for its hardware name (see
+    /// [`packet::parse_version_response`]), which [`refine`](Self::refine)
+    /// can use to tell receivers that share a USB id apart.
+    fn connect_commands(&self, seq: u16, dialect: Dialect) -> Vec<Vec<u8>> {
+        match dialect {
+            Dialect::V2 => vec![packet::build_version_request(seq)],
+            Dialect::V1 => Vec::new(),
+        }
+    }
+
+    /// Once the receiver has identified itself, the model that actually fits
+    /// it, if that's a different one (several receivers share a USB id).
+    fn refine(&self, _status: &DeviceStatus) -> Option<&'static dyn DeviceModel> {
+        None
     }
     /// Bulk IN endpoint (device → host).
     fn bulk_in(&self) -> u8;
@@ -112,7 +125,9 @@ pub trait DeviceModel: Send + Sync {
 }
 
 /// Every supported model.
-pub const MODELS: &[&dyn DeviceModel] = &[&MicMini, &Mic3];
+/// Every supported model. Models that share a USB id are listed with the
+/// default first (the one picked before the receiver identifies itself).
+pub const MODELS: &[&dyn DeviceModel] = &[&MicMini, &MobileRx, &Mic3, &MicMini2S];
 
 /// Find the model matching a USB `(vendor, product)` pair.
 pub fn model_for_usb(vendor: u16, product: u16) -> Option<&'static dyn DeviceModel> {

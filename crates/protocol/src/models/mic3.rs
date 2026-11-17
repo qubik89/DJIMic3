@@ -46,14 +46,14 @@ static AUDIO_CHANNEL_OPTS: [SettingOption; 3] = [
 ];
 // Wire values are the gain in dB as a signed byte. Slugs avoid a leading
 // `-` so they can be passed on the command line without `--`.
-static RX_GAIN_OPTS: [SettingOption; 5] = [
+pub(super) static RX_GAIN_OPTS: [SettingOption; 5] = [
     SettingOption { value: "m12", label: "−12", wire: 0xf4 },
     SettingOption { value: "m6", label: "−6", wire: 0xfa },
     SettingOption { value: "0", label: "0", wire: 0x00 },
     SettingOption { value: "p6", label: "+6", wire: 0x06 },
     SettingOption { value: "p12", label: "+12", wire: 0x0c },
 ];
-static GAIN_1DB_OPTS: [SettingOption; 25] = [
+pub(super) static GAIN_1DB_OPTS: [SettingOption; 25] = [
     SettingOption { value: "m12", label: "-12 dB", wire: 0xf4 },
     SettingOption { value: "m11", label: "-11 dB", wire: 0xf5 },
     SettingOption { value: "m10", label: "-10 dB", wire: 0xf6 },
@@ -90,7 +90,7 @@ static VOICE_TONE_OPTS: [SettingOption; 3] = [
     SettingOption { value: "rich", label: "Rich", wire: 0x01 },
     SettingOption { value: "bright", label: "Bright", wire: 0x02 },
 ];
-static RECORD_OPTS: [SettingOption; 2] = [
+pub(super) static RECORD_OPTS: [SettingOption; 2] = [
     SettingOption { value: "off", label: "Stopped", wire: 0x00 },
     SettingOption { value: "on", label: "Recording", wire: 0x01 },
 ];
@@ -128,10 +128,11 @@ const fn setting(
         options,
         exclusive_with: &[],
         note,
+        locked: None,
     }
 }
 
-static SETTINGS: [Setting; 25] = [
+pub(super) static SETTINGS: [Setting; 25] = [
     setting("noise-cancel", "Noise Cancel", G_AUDIO, SettingKind::Enum, 0x0037, TARGET_TX, &NC_OPTS, None),
     setting("noise-cancel-power", "Noise Cancelling", G_AUDIO, SettingKind::Toggle, 0x0038, TARGET_TX, &OFF_ON, None),
     setting("noise-cancel-button", "Toggle via TX power button", G_AUDIO, SettingKind::Toggle, 0x000f, TARGET_TX, &OFF_ON, None),
@@ -218,24 +219,11 @@ fn local_time() -> [u8; 6] {
     ]
 }
 
-/// CRC-8 over the frame preamble (poly `0x31` reflected, init `0x77`
-/// equivalent to the `0xEE`-seeded form in `PROTOCOL.md`).
-fn crc8(data: &[u8]) -> u8 {
-    let mut c = 0x77u8;
-    for &b in data {
-        c ^= b;
-        for _ in 0..8 {
-            c = if c & 1 != 0 { (c >> 1) ^ 0x8c } else { c >> 1 };
-        }
-    }
-    c
-}
-
 /// Set the transmitters' clock (command `0x0033`, receiver target) so
 /// internal recordings get correct file timestamps.
 pub(crate) fn clock_sync_packet(seq: u16, t: &[u8; 6]) -> Vec<u8> {
     let mut p = vec![0x55, 0x1d, 0x04, 0x00];
-    p[3] = crc8(&p[..3]);
+    p[3] = packet::header_crc8(&p[..3]);
     p.extend_from_slice(&[0x02, 0x5a, seq as u8, (seq >> 8) as u8]);
     p.extend_from_slice(&[0x40, 0x5b, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x33, 0x00, 0x08, 0x09]);
     p.extend_from_slice(t);
@@ -243,7 +231,12 @@ pub(crate) fn clock_sync_packet(seq: u16, t: &[u8; 6]) -> Vec<u8> {
     crate::crc::append(p, packet::Dialect::V2.crc_init(), packet::Dialect::V2.crc_residue())
 }
 
-fn option_slug(options: &[SettingOption], wire: u8) -> Option<String> {
+/// The 1 dB gain slug for a signed-dB status byte.
+pub(super) fn gain_slug(wire: u8) -> Option<String> {
+    option_slug(&GAIN_1DB_OPTS, wire)
+}
+
+pub(super) fn option_slug(options: &[SettingOption], wire: u8) -> Option<String> {
     options.iter().find(|o| o.wire == wire).map(|o| o.value.to_string())
 }
 
@@ -270,8 +263,8 @@ impl DeviceModel for Mic3 {
     fn max_tx(&self) -> usize {
         MAX_TX
     }
-    fn connect_commands(&self, seq: u16) -> Vec<Vec<u8>> {
-        vec![clock_sync_packet(seq, &local_time())]
+    fn connect_commands(&self, seq: u16, _dialect: packet::Dialect) -> Vec<Vec<u8>> {
+        vec![packet::build_version_request(seq), clock_sync_packet(seq.wrapping_add(1), &local_time())]
     }
     fn bulk_in(&self) -> u8 {
         0x81
@@ -283,82 +276,241 @@ impl DeviceModel for Mic3 {
         &SETTINGS
     }
 
-    fn decode(&self, previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
-        // Mic 3 firmware only ever speaks v2.
-        if packet::heartbeat_dialect(f)? != packet::Dialect::V2 {
-            return None;
-        }
-        let mut status = mic_mini::decode_v2(previous, f)?;
-        status.model_id = MODEL_ID.into();
-        status.protocol_version = Some(2);
+    fn refine(&self, status: &DeviceStatus) -> Option<&'static dyn DeviceModel> {
+        (family_variant(status) == Variant::Mini2S).then_some(&MicMini2S as &'static dyn DeviceModel)
+    }
 
-        if f.get(PUSH_KIND_OFFSET) == Some(&PUSH_KIND_STATUS) && f.len() > MONITOR_GAIN_OFFSET + 2 {
-            // The gain here is a software setting rather than a physical
-            // dial, so it's surfaced as a setting instead.
-            status.gain_dial = None;
-            let s = &mut status.settings;
-            // Not offered on this receiver (it rejects both commands).
+    fn decode(&self, previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
+        decode_family(previous, f, Variant::Mic3)
+    }
+}
+
+/// The two receivers on this interface share USB ids; the hardware name
+/// from the version request tells them apart (`DM303_RX` = Mic 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Variant {
+    Mic3,
+    Mini2S,
+}
+
+const MIC3_HARDWARE: &str = "DM303_RX";
+
+fn family_variant(status: &DeviceStatus) -> Variant {
+    let rx = status.rx.as_ref();
+    let hardware = rx.and_then(|r| r.hardware.as_deref());
+    let name = rx.and_then(|r| r.product_name.as_deref());
+    match (hardware, name) {
+        (Some(MIC3_HARDWARE), _) => Variant::Mic3,
+        (_, Some(n)) if n.contains("Mini 2S") => Variant::Mini2S,
+        (Some(_), _) => Variant::Mini2S,
+        // Not identified yet: stay as the Mic 3, the default for this id.
+        (None, _) => Variant::Mic3,
+    }
+}
+
+fn decode_family(previous: &DeviceStatus, f: &[u8], variant: Variant) -> Option<DeviceStatus> {
+    // Firmware on this interface only ever speaks v2.
+    if packet::heartbeat_dialect(f)? != packet::Dialect::V2 {
+        return None;
+    }
+    let mut status = mic_mini::decode_v2(previous, f)?;
+    status.model_id = match variant {
+        Variant::Mic3 => MODEL_ID,
+        Variant::Mini2S => MINI2S_ID,
+    }
+    .into();
+    status.protocol_version = Some(2);
+
+    if f.get(PUSH_KIND_OFFSET) == Some(&PUSH_KIND_STATUS) && f.len() > MONITOR_GAIN_OFFSET + 2 {
+        // No physical gain dial on these receivers.
+        status.gain_dial = None;
+        let s = &mut status.settings;
+        // The Mic 3 rejects both; the Mini 2S keeps Safety Track.
+        s.remove("clip-limiter");
+        if variant == Variant::Mic3 {
             s.remove("safety-track");
-            s.remove("clip-limiter");
-            let channels = f[CHANNEL_FLAGS_OFFSET];
-            let mode = if channels & 0x08 != 0 {
-                "quad"
-            } else if channels & 0x04 != 0 {
-                "stereo"
-            } else {
-                "mono"
-            };
-            s.insert("stereo".into(), mode.into());
+        }
+        let channels = f[CHANNEL_FLAGS_OFFSET];
+        let mode = if channels & 0x08 != 0 {
+            "quad"
+        } else if channels & 0x04 != 0 {
+            "stereo"
+        } else {
+            "mono"
+        };
+        s.insert("stereo".into(), mode.into());
+        let flags = f[RX_FLAGS_OFFSET];
+        if variant == Variant::Mic3 {
             if let Some(v) = option_slug(&RX_GAIN_OPTS, f[RX_GAIN_OFFSET]) {
                 s.insert("rx-gain".into(), v);
             }
             if let Some(v) = option_slug(&GAIN_1DB_OPTS, f[MONITOR_GAIN_OFFSET]) {
                 s.insert("monitor-gain".into(), v);
             }
+            s.insert("lossless".into(), on_off(flags & 0x04 != 0));
+        }
 
-            // Receiver battery: offset 21 bit 0x10 charging, bits 0xe0 a
-            // 1 (full) … 7 (empty) gauge like the transmitters'.
-            let flags = f[RX_FLAGS_OFFSET];
-            status.settings.insert("lossless".into(), on_off(flags & 0x04 != 0));
-            if let Some(rx) = status.rx.as_mut() {
+        // Receiver battery: offset 21 bit 0x10 charging, bits 0xe0 a
+        // 1 (full) … 7 (empty) gauge like the transmitters'.
+        if let Some(rx) = status.rx.as_mut() {
+            if variant == Variant::Mic3 {
                 rx.environment =
                     Some(if flags & 0x01 != 0 { "outdoors" } else { "indoors" }.to_string());
-                rx.charging = Some(channels & 0x10 != 0);
-                rx.battery = Some((channels >> 5) & 0x07).filter(|&b| b != 0);
             }
+            rx.charging = Some(channels & 0x10 != 0);
+            rx.battery = Some((channels >> 5) & 0x07).filter(|&b| b != 0);
+        }
 
-            // Transmitter slots. Shared settings mirror across every
-            // transmitter, so the first slot stands for all of them.
-            let tx_count = (f.len() - HEADER_LEN - 2) / TX_SLOT_LEN;
-            for pos in 0..tx_count.min(MAX_TX) {
-                let slot = &f[HEADER_LEN + TX_SLOT_LEN * pos..HEADER_LEN + TX_SLOT_LEN * (pos + 1)];
-                if pos == 0 {
-                    let s = &mut status.settings;
-                    s.insert("tx-clip-control".into(), on_off(slot[8] & 0x04 != 0));
-                    s.insert("loudness-balance".into(), on_off(slot[11] & 0x80 != 0));
-                    s.insert("vibration".into(), on_off(slot[9] & 0x01 != 0));
-                    s.insert("float32".into(), on_off(slot[9] & 0x08 != 0));
-                    s.insert("loop-recording".into(), on_off(slot[11] & 0x08 != 0));
-                    s.insert("low-power-recording".into(), on_off(slot[11] & 0x10 != 0));
-                    s.insert("startup-recording".into(), on_off(slot[8] & 0x80 != 0));
-                    s.insert("rec-stop".into(), on_off(slot[11] & 0x20 != 0));
+        // Transmitter slots. Shared settings mirror across every
+        // transmitter, so the first slot stands for all of them.
+        let tx_count = (f.len() - HEADER_LEN - 2) / TX_SLOT_LEN;
+        for pos in 0..tx_count.min(MAX_TX) {
+            let slot = &f[HEADER_LEN + TX_SLOT_LEN * pos..HEADER_LEN + TX_SLOT_LEN * (pos + 1)];
+            if pos == 0 {
+                let s = &mut status.settings;
+                s.insert("tx-clip-control".into(), on_off(slot[8] & 0x04 != 0));
+                s.insert("loudness-balance".into(), on_off(slot[11] & 0x80 != 0));
+                s.insert("vibration".into(), on_off(slot[9] & 0x01 != 0));
+                s.insert("float32".into(), on_off(slot[9] & 0x08 != 0));
+                s.insert("loop-recording".into(), on_off(slot[11] & 0x08 != 0));
+                s.insert("low-power-recording".into(), on_off(slot[11] & 0x10 != 0));
+                s.insert("rec-stop".into(), on_off(slot[11] & 0x20 != 0));
+                match variant {
+                    Variant::Mic3 => {
+                        s.insert("startup-recording".into(), on_off(slot[8] & 0x80 != 0));
+                    }
+                    Variant::Mini2S => {
+                        // Slot +31: 0x10 record on power-on, 0x20 record
+                        // with the receiver, 0x80 dual-file recording.
+                        let mode = if slot[31] & 0x10 != 0 {
+                            "startup"
+                        } else if slot[31] & 0x20 != 0 {
+                            "receiver"
+                        } else {
+                            "off"
+                        };
+                        s.remove("startup-recording");
+                        s.insert("auto-record".into(), mode.into());
+                        s.insert("dual-file".into(), on_off(slot[31] & 0x80 != 0));
+                    }
                 }
-                let Some(i) = mic_mini::tx_slot(slot[1]) else { continue };
-                let Some(tx) = status.tx[i].as_mut() else { continue };
-                tx.rec_total = Some(u16_le(&slot[14..16]));
-                tx.rec_remaining = Some(u16_le(&slot[16..18]));
-                let t = &mut tx.settings;
+            }
+            let Some(i) = mic_mini::tx_slot(slot[1]) else { continue };
+            let Some(tx) = status.tx[i].as_mut() else { continue };
+            // Mic 3 transmitters don't report a name; on the Mini 2S
+            // receiver an unnamed transmitter is most likely a Mini 2S.
+            let caps = match variant {
+                Variant::Mic3 => mic_mini::TX_CAPS_FULL,
+                Variant::Mini2S => mic_mini::tx_caps(tx.product_name.as_deref()).unwrap_or(mic_mini::TX_CAPS_FULL),
+            };
+            let t = &mut tx.settings;
+            t.clear();
+            if caps.voice_tone {
                 if let Some(tone) = tx.voice_tone.clone() {
                     t.insert("voice-tone".into(), tone);
                 }
+            }
+            if caps.gain {
                 if let Some(v) = option_slug(&GAIN_1DB_OPTS, slot[13]) {
                     t.insert("tx-gain".into(), v);
                 }
+            }
+            if caps.extended {
+                tx.rec_total = Some(u16_le(&slot[14..16]));
+                tx.rec_remaining = Some(u16_le(&slot[16..18]));
                 t.insert("record".into(), on_off(slot[9] & 0x10 != 0));
                 t.insert("mute".into(), on_off(slot[6] & 0x04 != 0));
             }
         }
-        Some(status)
+    }
+    Some(status)
+}
+
+/// The DJI Mic Mini 2S receiver: same interface and protocol as the Mic 3,
+/// with Safety Track and the Mini 2S recording modes, and without the
+/// Mic 3's lossless, environment and receiver/monitoring gain controls.
+/// Settings follow usokawa/dji-mic-mo and kroqdotdev/lavboard; not tested
+/// on hardware by this project.
+pub struct MicMini2S;
+
+const MINI2S_ID: &str = "dji-mic-mini-2s";
+
+static AUTO_RECORD_OPTS: [SettingOption; 3] = [
+    SettingOption { value: "off", label: "Off", wire: 0x00 },
+    SettingOption { value: "startup", label: "On power-on", wire: 0x01 },
+    SettingOption { value: "receiver", label: "With receiver", wire: 0x02 },
+];
+static DUAL_FILE_OPTS: [SettingOption; 2] = [
+    SettingOption { value: "off", label: "Off", wire: 0x00 },
+    SettingOption { value: "on", label: "On", wire: 0x02 },
+];
+
+fn mini2s_settings() -> &'static [Setting] {
+    static CELL: std::sync::OnceLock<Vec<Setting>> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| {
+        let mut out = Vec::new();
+        for s in SETTINGS.iter() {
+            match s.id {
+                "lossless" | "rx-gain" | "monitor-gain" | "startup-recording" => {}
+                "stereo" => {
+                    let mut st = s.clone();
+                    st.exclusive_with = &["safety-track"];
+                    out.push(st);
+                    let mut safety = setting("safety-track", "Safety Track", G_AUDIO, SettingKind::Toggle, 0x0021, TARGET_RX, &OFF_ON, None);
+                    safety.exclusive_with = &["stereo"];
+                    out.push(safety);
+                }
+                "rec-stop" => {
+                    out.push(s.clone());
+                    out.push(setting("auto-record", "Auto Recording", G_REC, SettingKind::Enum, 0x003e, TARGET_TX, &AUTO_RECORD_OPTS, None));
+                    out.push(setting("dual-file", "Dual-File Recording", G_REC, SettingKind::Toggle, 0x003d, TARGET_TX, &DUAL_FILE_OPTS, None));
+                }
+                _ => out.push(s.clone()),
+            }
+        }
+        out
+    })
+}
+
+impl DeviceModel for MicMini2S {
+    fn id(&self) -> &'static str {
+        MINI2S_ID
+    }
+    fn name(&self) -> &'static str {
+        "DJI Mic Mini 2S"
+    }
+    fn pictogram_key(&self) -> &'static str {
+        "mic-mini-2s"
+    }
+    fn usb_ids(&self) -> &'static [(u16, u16)] {
+        Mic3.usb_ids()
+    }
+    fn interface(&self) -> u8 {
+        Mic3.interface()
+    }
+    fn alt_setting(&self) -> u8 {
+        Mic3.alt_setting()
+    }
+    fn max_tx(&self) -> usize {
+        MAX_TX
+    }
+    fn connect_commands(&self, seq: u16, dialect: packet::Dialect) -> Vec<Vec<u8>> {
+        Mic3.connect_commands(seq, dialect)
+    }
+    fn bulk_in(&self) -> u8 {
+        Mic3.bulk_in()
+    }
+    fn bulk_out(&self) -> u8 {
+        Mic3.bulk_out()
+    }
+    fn settings(&self) -> &'static [Setting] {
+        mini2s_settings()
+    }
+    fn refine(&self, status: &DeviceStatus) -> Option<&'static dyn DeviceModel> {
+        (family_variant(status) == Variant::Mic3).then_some(&Mic3 as &'static dyn DeviceModel)
+    }
+    fn decode(&self, previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
+        decode_family(previous, f, Variant::Mini2S)
     }
 }
 
@@ -460,14 +612,53 @@ mod tests {
         assert_eq!(st.settings["vibration"], "off");
     }
 
+    fn with_hardware(name: &str) -> DeviceStatus {
+        let mut st = DeviceStatus::disconnected(MODEL_ID);
+        st.rx = Some(crate::state::RxInfo { hardware: Some(name.into()), ..crate::state::RxInfo::unknown() });
+        st
+    }
+
+    #[test]
+    fn hardware_name_tells_mic3_and_mini_2s_apart() {
+        assert!(Mic3.refine(&DeviceStatus::disconnected(MODEL_ID)).is_none(), "unidentified stays Mic 3");
+        assert!(Mic3.refine(&with_hardware("DM303_RX")).is_none());
+        assert_eq!(Mic3.refine(&with_hardware("WM2S_RX")).map(|m| m.id()), Some(MINI2S_ID));
+        assert_eq!(MicMini2S.refine(&with_hardware("DM303_RX")).map(|m| m.id()), Some(MODEL_ID));
+        assert!(MicMini2S.refine(&with_hardware("WM2S_RX")).is_none());
+    }
+
+    #[test]
+    fn mini_2s_settings_and_recording_modes() {
+        let ids: Vec<_> = MicMini2S.settings().iter().map(|s| s.id).collect();
+        for id in ["safety-track", "auto-record", "dual-file", "stereo", "tx-gain", "mute", "record"] {
+            assert!(ids.contains(&id), "{id}");
+        }
+        for id in ["lossless", "rx-gain", "monitor-gain", "startup-recording"] {
+            assert!(!ids.contains(&id), "{id}");
+        }
+        let pkt = MicMini2S.build_command(1, packet::Dialect::V2, "auto-record", "receiver", None).unwrap();
+        assert_eq!(&pkt[16..20], &[0x3e, 0x00, 0x01, 0x02]);
+
+        let mut f = STATUS_1TX;
+        f[52 + 31] = 0xa0; // with receiver + dual-file
+        let st = MicMini2S.decode(&DeviceStatus::disconnected(MINI2S_ID), &f).unwrap();
+        assert_eq!(st.model_id, MINI2S_ID);
+        assert_eq!(st.settings["auto-record"], "receiver");
+        assert_eq!(st.settings["dual-file"], "on");
+        assert!(st.settings.contains_key("safety-track"));
+        assert!(!st.settings.contains_key("lossless"));
+        assert!(!st.settings.contains_key("startup-recording"));
+        assert_eq!(st.rx.as_ref().unwrap().environment, None);
+    }
+
     #[test]
     fn clock_sync_matches_reference_capture() {
         // Sent to the receiver on 2026-11-17 12:11:43 and acknowledged.
         let p = clock_sync_packet(0x0109, &[0x1a, 0x0b, 0x11, 0x0c, 0x0b, 0x2b]);
         assert_eq!(p.len(), 29);
-        assert_eq!(&p[..4], &[0x55, 0x1d, 0x04, crc8(&[0x55, 0x1d, 0x04])]);
+        assert_eq!(&p[..4], &[0x55, 0x1d, 0x04, packet::header_crc8(&[0x55, 0x1d, 0x04])]);
         assert_eq!(&p[16..27], &[0x33, 0x00, 0x08, 0x09, 0x1a, 0x0b, 0x11, 0x0c, 0x0b, 0x2b, 0x00]);
-        assert_eq!(crc8(&[0x55, 0x16, 0x04]), 0xfc); // matches the 22-byte command header
+        assert_eq!(packet::header_crc8(&[0x55, 0x16, 0x04]), 0xfc); // matches the 22-byte command header
     }
 
     #[test]

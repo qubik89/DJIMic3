@@ -32,6 +32,10 @@ pub enum DeviceError {
     #[error("setting {0:?} does not target a specific transmitter (use set)")]
     UnexpectedTx(String),
 
+    /// The setting is read-only on this model (e.g. a hardware switch).
+    #[error("{0}")]
+    Locked(String),
+
     /// A USB transfer failed.
     #[error("usb error: {0}")]
     Usb(String),

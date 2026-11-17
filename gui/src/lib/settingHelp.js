@@ -249,6 +249,33 @@ const nl = {
   "tx-gain": "Ingangsversterking van de zender. Zet hem lager als de niveaubalk rood wordt.",
 };
 
+
+// Settings added with multi-model support.
+Object.assign(en, {
+  "auto-record": "Transmitters start internal recording on their own: as soon as they power on, or whenever they link to the receiver.",
+  "dual-file": "Keeps the original recording alongside a second file with the noise cancelling and other processing applied."
+});
+Object.assign(es, {
+  "auto-record": "Los transmisores empiezan a grabar internamente solos: nada más encenderse o cada vez que se conectan al receptor.",
+  "dual-file": "Guarda la grabación original junto a un segundo archivo con la cancelación de ruido y el resto del procesado aplicados."
+});
+Object.assign(fr, {
+  "auto-record": "Les émetteurs lancent l'enregistrement interne d'eux-mêmes : dès l'allumage, ou dès qu'ils se connectent au récepteur.",
+  "dual-file": "Conserve l'enregistrement original avec un second fichier où la réduction de bruit et les autres traitements sont appliqués."
+});
+Object.assign(it, {
+  "auto-record": "I trasmettitori avviano da soli la registrazione interna: appena accesi, oppure ogni volta che si collegano al ricevitore.",
+  "dual-file": "Mantiene la registrazione originale insieme a un secondo file con la cancellazione del rumore e le altre elaborazioni applicate."
+});
+Object.assign(de, {
+  "auto-record": "Die Sender starten die interne Aufnahme selbst: sobald sie eingeschaltet werden oder sich mit dem Empfänger verbinden.",
+  "dual-file": "Behält die Originalaufnahme und speichert eine zweite Datei mit Rauschunterdrückung und übriger Bearbeitung."
+});
+Object.assign(nl, {
+  "auto-record": "De zenders starten zelf de interne opname: zodra ze aangaan, of telkens wanneer ze verbinding maken met de ontvanger.",
+  "dual-file": "Bewaart de originele opname naast een tweede bestand met ruisonderdrukking en de andere bewerkingen toegepast."
+});
+
 const HELP = { en, "es-ES": es, fr, it, de, nl };
 
 /** The ⓘ explanation for `id` in `locale`, falling back to English. */

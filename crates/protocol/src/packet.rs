@@ -225,9 +225,64 @@ pub fn build_v2_command(seq: u16, target: u16, command: u16, value: u8) -> Vec<u
     crc::append(body, Dialect::V2.crc_init(), Dialect::V2.crc_residue())
 }
 
+/// CRC-8 over a frame's first three bytes (`SOF`, length, version): poly
+/// `0x31` reflected, written here with the equivalent `0x77` seed.
+pub fn header_crc8(data: &[u8]) -> u8 {
+    let mut c = 0x77u8;
+    for &b in data {
+        c ^= b;
+        for _ in 0..8 {
+            c = if c & 1 != 0 { (c >> 1) ^ 0x8c } else { c >> 1 };
+        }
+    }
+    c
+}
+
+/// Build a v2 request frame: `cmd_set`/`cmd_id` with an arbitrary payload,
+/// ACK requested.
+pub fn build_v2_request(seq: u16, cmd_set: u8, cmd_id: u8, payload: &[u8]) -> Vec<u8> {
+    let len = 11 + payload.len() + 2;
+    let mut body = vec![SOF, len as u8, 0x04, 0];
+    body[3] = header_crc8(&body[..3]);
+    body.extend_from_slice(&[0x02, 0x5a, seq as u8, (seq >> 8) as u8, 0x40, cmd_set, cmd_id]);
+    body.extend_from_slice(payload);
+    crc::append(body, Dialect::V2.crc_init(), Dialect::V2.crc_residue())
+}
+
+/// The general "get version" request (command set `0x00`, id `0x01`). The
+/// receiver answers with its hardware name, e.g. `DM303_RX` for the Mic 3.
+pub fn build_version_request(seq: u16) -> Vec<u8> {
+    build_v2_request(seq, 0x00, 0x01, &[])
+}
+
+/// The hardware name from a "get version" response, if `frame` is one.
+pub fn parse_version_response(frame: &[u8]) -> Option<String> {
+    if frame.len() < 16 || frame[8] & 0x80 == 0 || frame[9] != 0x00 || frame[10] != 0x01 || frame[11] != 0x00 {
+        return None;
+    }
+    let field = &frame[13..frame.len().saturating_sub(2).min(13 + 16)];
+    let end = field.iter().position(|&b| b == 0).unwrap_or(field.len());
+    let name = String::from_utf8_lossy(&field[..end]).trim().to_string();
+    (!name.is_empty() && name.chars().all(|c| c.is_ascii_graphic() || c == ' ')).then_some(name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_request_and_response() {
+        // Sent to and answered by a DJI Mic 3 receiver.
+        assert_eq!(build_version_request(0x0100), vec![0x55, 0x0d, 0x04, 0x33, 0x02, 0x5a, 0x00, 0x01, 0x40, 0x00, 0x01, 0x72, 0x91]);
+        let resp = [
+            0x55, 0x2b, 0x04, 0x58, 0x5a, 0x02, 0x00, 0x01, 0x80, 0x00, 0x01, 0x00, 0x01, 0x44, 0x4d, 0x33,
+            0x30, 0x33, 0x5f, 0x52, 0x58, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x05, 0x19,
+            0x63, 0x0a, 0x00, 0x01, 0x03, 0x01, 0x00, 0x00, 0x00, 0x5e, 0x45,
+        ];
+        assert_eq!(parse_version_response(&resp).as_deref(), Some("DM303_RX"));
+        // A plain ACK is not a version response.
+        assert_eq!(parse_version_response(&[0x55, 0x0e, 0x04, 0x66, 0x5a, 0x02, 0x01, 0x00, 0x80, 0x5b, 0x01, 0x00, 0xbd, 0xe4]), None);
+    }
 
     #[test]
     fn builds_documented_nc_strong_command() {

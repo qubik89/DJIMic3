@@ -77,6 +77,11 @@ pub struct RxInfo {
     pub battery: Option<u8>,
     /// True while the receiver is charging.
     pub charging: Option<bool>,
+    /// Product name the receiver reports for itself (identity record), e.g.
+    /// `DJI Mic Mini 2` for the Mic Series Mobile Receiver.
+    pub product_name: Option<String>,
+    /// Hardware name from the "get version" request, e.g. `DM303_RX`.
+    pub hardware: Option<String>,
     /// Radio environment the receiver is set to (`"indoors"`/`"outdoors"`),
     /// on receivers that report it. Read-only: set on the receiver itself.
     pub environment: Option<String>,
@@ -85,7 +90,7 @@ pub struct RxInfo {
 impl RxInfo {
     /// A receiver whose identity hasn't been reported yet.
     pub fn unknown() -> Self {
-        Self { serial: None, firmware: None, battery: None, charging: None, environment: None }
+        Self { serial: None, firmware: None, battery: None, charging: None, environment: None, product_name: None, hardware: None }
     }
 }
 
