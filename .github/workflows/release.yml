@@ -135,5 +135,10 @@ jobs:
             # and only then publishes it, so it never becomes "latest" without
             # them: releases/latest/download/<name> (which miccontrol.app
             # redirects to) keeps serving the previous version until then.
-            gh release create "$TAG" * --title "DJI Mic Control ${TAG#v}" --generate-notes
+            # Notes: GitHub's generated changelog, then links to the website's
+            # setup guides (kept outside dist/ so they aren't uploaded).
+            notes="$RUNNER_TEMP/notes.md"
+            gh api "repos/$GH_REPO/releases/generate-notes" -f tag_name="$TAG" --jq .body > "$notes"
+            printf '\n---\n\nNew here? Setup guide: https://miccontrol.app/en/dji-mic-3-mac/ · Troubleshooting: https://miccontrol.app/en/dji-mic-3-not-recognized-mac/\n' >> "$notes"
+            gh release create "$TAG" * --title "DJI Mic Control ${TAG#v}" --notes-file "$notes"
           fi
