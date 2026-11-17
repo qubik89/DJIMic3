@@ -2,6 +2,7 @@
 name = "djimic-gui"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "Desktop control app for DJI wireless microphones."
 

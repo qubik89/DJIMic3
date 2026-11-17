@@ -171,8 +171,8 @@ USB accessories certified through Apple's MFi programme.
 
 ## Build from source
 
-Requirements: Rust 1.77+ and Node.js 18+ (Linux also needs the WebKitGTK/GTK
-development packages Tauri requires).
+Requirements: Rust 1.88+ and Node.js 20.19+ (or 22.12+); Linux also needs the WebKitGTK/GTK
+development packages Tauri requires.
 
 ```bash
 ./build-release.sh            # macOS/Linux → Release/<os>/ (.app + .dmg, or .deb/.rpm/.AppImage)
