@@ -7,6 +7,7 @@ description = "Framing, CRC, command building and heartbeat decoding for DJI wir
 
 [dependencies]
 serde = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

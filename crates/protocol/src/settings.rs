@@ -16,6 +16,9 @@ pub enum SettingKind {
     Toggle,
     /// More than two mutually exclusive options — rendered as a segmented picker.
     Enum,
+    /// Many mutually exclusive options (e.g. a gain in 1 dB steps) — rendered
+    /// as a drop-down rather than a segmented picker.
+    Select,
 }
 
 /// Where a v2 command is addressed.

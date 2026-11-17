@@ -52,7 +52,9 @@ pub struct DeviceSummary {
     pub rx_serial: Option<String>,
     /// Battery/charging state for each TX slot, `None` where no transmitter
     /// is connected there.
-    pub tx: [Option<TxBattery>; 2],
+    pub tx: [Option<TxBattery>; protocol::MAX_TX],
+    /// How many transmitter slots this model has (see `DeviceModel::max_tx`).
+    pub max_tx: usize,
 }
 
 /// The result of scanning the bus, used to decide whether to show setup help.
@@ -126,7 +128,11 @@ impl DeviceManager {
                 for &iface in model.detach_interfaces() {
                     let _ = dev.detach_kernel_driver(iface);
                 }
-                dev.detach_and_claim_interface(model.interface())
+                let iface = dev.detach_and_claim_interface(model.interface())?;
+                if model.alt_setting() != 0 {
+                    iface.set_alt_setting(model.alt_setting())?;
+                }
+                Ok(iface)
             });
 
             match opened {
@@ -170,6 +176,7 @@ impl DeviceManager {
                     pictogram_key: h.model.pictogram_key().to_string(),
                     connected: live,
                     rx_serial: st.rx.as_ref().and_then(|r| r.serial.clone()),
+                    max_tx: h.model.max_tx(),
                     tx: std::array::from_fn(|i| {
                         st.tx[i].as_ref().map(|t| TxBattery {
                             battery: t.battery,

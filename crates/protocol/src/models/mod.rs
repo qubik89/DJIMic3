@@ -6,8 +6,10 @@
 //! microphone — even one speaking a different protocol — means implementing this
 //! trait and adding it to [`MODELS`]; nothing else changes.
 
+mod mic3;
 mod mic_mini;
 
+pub use mic3::Mic3;
 pub use mic_mini::MicMini;
 
 use crate::packet::{self, Dialect};
@@ -33,6 +35,23 @@ pub trait DeviceModel: Send + Sync {
     /// usable as a normal sound device.
     fn detach_interfaces(&self) -> &'static [u8] {
         &[]
+    }
+    /// Alternate setting to select on the claimed interface before any I/O.
+    /// `0` (the default) leaves the interface as claimed; a model whose bulk
+    /// endpoints only exist on a non-zero alternate setting overrides this.
+    fn alt_setting(&self) -> u8 {
+        0
+    }
+    /// How many transmitters this receiver can pair with at once (at most
+    /// [`MAX_TX`](crate::state::MAX_TX)).
+    fn max_tx(&self) -> usize {
+        2
+    }
+    /// Packets to send once, right after the device starts streaming (e.g. a
+    /// clock sync). `seq` is the first sequence number to use; each packet
+    /// takes the next one.
+    fn connect_commands(&self, _seq: u16) -> Vec<Vec<u8>> {
+        Vec::new()
     }
     /// Bulk IN endpoint (device → host).
     fn bulk_in(&self) -> u8;
@@ -93,7 +112,7 @@ pub trait DeviceModel: Send + Sync {
 }
 
 /// Every supported model.
-pub const MODELS: &[&dyn DeviceModel] = &[&MicMini];
+pub const MODELS: &[&dyn DeviceModel] = &[&MicMini, &Mic3];
 
 /// Find the model matching a USB `(vendor, product)` pair.
 pub fn model_for_usb(vendor: u16, product: u16) -> Option<&'static dyn DeviceModel> {

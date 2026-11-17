@@ -14,18 +14,20 @@
     art[stem] = url;
   }
 
-  let { pictogram = "", size = 44 } = $props();
+  let { pictogram = "", size = 44, width = null, height = null } = $props();
+  const w = $derived(width ?? size);
+  const h = $derived(height ?? size);
   const src = $derived(art[pictogram]);
 </script>
 
 {#if src}
-  <img class="picto" {src} alt="" width={size} height={size} />
+  <img class="picto" {src} alt="" width={w} height={h} />
 {:else}
   <!-- Neutral fallback so a new model renders before its artwork is supplied. -->
   <svg
     class="picto"
-    width={size}
-    height={size}
+    width={w}
+    height={h}
     viewBox="0 0 24 24"
     fill="none"
     aria-hidden="true"

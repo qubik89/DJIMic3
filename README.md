@@ -23,6 +23,14 @@ After copying the app from the dmg to Applications, execute the following comman
 sudo xattr -rd com.apple.quarantine /Applications/DJI\ Mic\ Control.app
 ```
 
+## Languages
+
+The GUI is available in English, Spanish (Spain), French, Italian, German and
+Dutch. It starts in the system language when supported (English otherwise);
+change it from the globe menu in the title bar. The choice is remembered, and
+the tray menu and macOS app menu follow it. Device names, serials and the CLI
+stay in English.
+
 ## Windows USB access
 
 Windows binds the receiver's HID interface to its own class driver, and unlike

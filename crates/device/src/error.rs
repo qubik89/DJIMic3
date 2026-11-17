@@ -36,6 +36,16 @@ pub enum DeviceError {
     #[error("usb error: {0}")]
     Usb(String),
 
+    /// The device answered the command with a non-zero result code — it
+    /// doesn't support this setting, or not in its current state (e.g. no
+    /// transmitter connected).
+    #[error("device rejected the command (code 0x{0:02x})")]
+    Rejected(u8),
+
+    /// The device never acknowledged the command, even after retries.
+    #[error("device did not acknowledge the command")]
+    NoAck,
+
     /// The device task is no longer running.
     #[error("device disconnected")]
     Disconnected,

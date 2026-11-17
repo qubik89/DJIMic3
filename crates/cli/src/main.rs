@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use device::{DeviceManager, DeviceStatus};
-use device::protocol::TxInfo;
+use device::protocol::{TxInfo, MAX_TX};
 
 /// How long to wait for a device to appear and send its first heartbeat.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -93,8 +93,8 @@ fn main() -> Result<()> {
 /// index the device layer uses.
 fn slot_index(tx: usize) -> Result<usize> {
     match tx {
-        1 | 2 => Ok(tx - 1),
-        _ => bail!("--tx must be 1 or 2, got {tx}"),
+        1..=MAX_TX => Ok(tx - 1),
+        _ => bail!("--tx must be 1 to {}, got {tx}", MAX_TX),
     }
 }
 
@@ -125,7 +125,9 @@ fn wait_connected(mgr: &DeviceManager, id: &str) -> Result<DeviceStatus> {
     let deadline = Instant::now() + CONNECT_TIMEOUT;
     loop {
         if let Ok(status) = mgr.status(id) {
-            if status.connected {
+            // Identity/level pushes decode before the first status push on
+            // v2 firmware; wait for the one that actually carries settings.
+            if status.connected && !status.settings.is_empty() {
                 return Ok(status);
             }
         }
@@ -192,7 +194,7 @@ fn get(status: &DeviceStatus, setting: &str, tx: Option<usize>, json: bool) -> R
 fn tx_setting_value(tx: Option<&TxInfo>, setting: &str) -> Option<String> {
     match setting {
         "voice-tone" => tx?.voice_tone.clone(),
-        _ => None,
+        _ => tx?.settings.get(setting).cloned(),
     }
 }
 
@@ -220,8 +222,16 @@ fn print_status(mgr: &DeviceManager, id: &str, status: &DeviceStatus, json: bool
     println!("Device:  {id}  ({})", status.model_id);
     if let Some(rx) = &status.rx {
         println!("Receiver: serial {}  fw {}", unknown(&rx.serial), unknown(&rx.firmware));
+        if let Some(b) = rx.battery {
+            let charging = if rx.charging == Some(true) { ", charging" } else { "" };
+            println!("          battery {b}/7 (1 = full){charging}");
+        }
     }
     for (i, tx) in status.tx.iter().enumerate() {
+        // Slots past the second only exist on four-transmitter receivers.
+        if i >= 2 && tx.is_none() {
+            continue;
+        }
         let label = tx_label(i, tx.as_ref());
         match tx {
             Some(t) => println!(
@@ -232,6 +242,20 @@ fn print_status(mgr: &DeviceManager, id: &str, status: &DeviceStatus, json: bool
                 unknown(&t.voice_tone)
             ),
             None => println!("{label}:      (off)"),
+        }
+        if let Some(t) = tx {
+            if let (Some(total), Some(left)) = (t.rec_total, t.rec_remaining) {
+                println!(
+                    "            recording time left {:.1} h of {:.1} h",
+                    f32::from(left) / 10.0,
+                    f32::from(total) / 10.0
+                );
+            }
+            for (k, v) in &t.settings {
+                if k != "voice-tone" {
+                    println!("            {k:<20} {v}");
+                }
+            }
         }
     }
     println!("NC button: {}", if status.nc_enabled { "on" } else { "off" });

@@ -1,9 +1,15 @@
 <script>
+  import Tip from "./Tip.svelte";
+  import { t } from "./i18n.js";
   // `value` is the raw 1-7 gauge from `TxInfo.battery` (see PROTOCOL.md) --
   // 1 is full, 7 is the terminal reading immediately before auto-shutoff.
   // 0/null (not yet known, or the practically-unreachable gauge floor)
   // renders nothing rather than guessing.
-  let { value = null, charging = false, size = 20 } = $props();
+  let { value = null, charging = false, size = 20, percent = true, tip = true } = $props();
+
+  // The device only reports seven steps, so this is an estimate spread
+  // evenly across them: 1 → 100%, 7 → 0%.
+  const pct = $derived(value >= 1 && value <= 7 ? Math.round(((7 - value) / 6) * 100) : null);
 
   // 1-4 green, 5 orange (caution), 6-7 red — the transmitter's own LED
   // turns red starting at 6, not 7, so both share the danger color; 7 is
@@ -59,13 +65,8 @@
   );
 </script>
 
-{#if tier}
-  <span
-    class="batt"
-    class:flash={showExclaim}
-    style="--batt-color:{color}"
-    title="Battery: {label}{charging ? ' (charging)' : ''}"
-  >
+{#snippet icon()}
+  <span class="batt" class:flash={showExclaim} style="--batt-color:{color}">
     <svg width={size} height={size * 0.55} viewBox="0 0 22 12" fill="none" aria-hidden="true">
       <rect x="1" y="1" width="17" height="10" rx="2.5" stroke="var(--batt-color)" stroke-width="1.5" />
       <rect x="19" y="4" width="2" height="4" rx="1" fill="var(--batt-color)" />
@@ -96,7 +97,25 @@
         </g>
       {/if}
     </svg>
+    {#if percent && pct != null}
+      <span class="pct">≈{pct}%</span>
+    {/if}
   </span>
+{/snippet}
+
+{#if tier}
+  {#if tip}
+    <Tip
+      text={$t(
+        "Battery: {label}{charging}. About {pct}% (level {level} of 7). The microphone only reports seven levels, so the percentage is an estimate.",
+        { label: $t(label).toLowerCase(), charging: charging ? $t(", charging") : "", pct, level: value },
+      )}
+    >
+      {@render icon()}
+    </Tip>
+  {:else}
+    {@render icon()}
+  {/if}
 {/if}
 
 <style>
@@ -105,6 +124,16 @@
     display: inline-flex;
     align-items: center;
     line-height: 0;
+  }
+  .pct {
+    margin-left: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0;
+    text-transform: none;
+    font-variant-numeric: tabular-nums;
+    color: var(--batt-color);
   }
   .flash .excl {
     /* No steps() function at all -- the keyframes' own percentages already

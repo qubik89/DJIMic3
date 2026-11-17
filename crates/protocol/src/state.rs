@@ -56,6 +56,14 @@ pub struct TxInfo {
     /// first status push for this transmitter, or on v1 firmware, which
     /// this isn't decoded on yet.
     pub battery: Option<u8>,
+    /// Current value slug of every setting addressed to this one transmitter
+    /// (a setting whose target is `V2Target::Tx`), keyed by setting id.
+    /// Empty on models that report none beyond `voice_tone`.
+    pub settings: BTreeMap<String, String>,
+    /// Internal-recording capacity in tenths of an hour, on transmitters
+    /// that record internally: total, and what's left.
+    pub rec_total: Option<u16>,
+    pub rec_remaining: Option<u16>,
 }
 
 /// State of the receiver. `serial`/`firmware` are `None` when not yet known
@@ -64,7 +72,25 @@ pub struct TxInfo {
 pub struct RxInfo {
     pub serial: Option<String>,
     pub firmware: Option<Firmware>,
+    /// The receiver's own battery gauge (same 1 = full … 7 = empty scale as
+    /// [`TxInfo::battery`]), on receivers that have one.
+    pub battery: Option<u8>,
+    /// True while the receiver is charging.
+    pub charging: Option<bool>,
+    /// Radio environment the receiver is set to (`"indoors"`/`"outdoors"`),
+    /// on receivers that report it. Read-only: set on the receiver itself.
+    pub environment: Option<String>,
 }
+
+impl RxInfo {
+    /// A receiver whose identity hasn't been reported yet.
+    pub fn unknown() -> Self {
+        Self { serial: None, firmware: None, battery: None, charging: None, environment: None }
+    }
+}
+
+/// Most transmitters any supported receiver can pair with at once.
+pub const MAX_TX: usize = 4;
 
 /// A model-agnostic snapshot of a device's current state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -76,7 +102,7 @@ pub struct DeviceStatus {
     /// Noise cancellation enabled (toggled by the physical button on the TX).
     pub nc_enabled: bool,
     /// Transmitter slots. `None` = that transmitter is powered off.
-    pub tx: [Option<TxInfo>; 2],
+    pub tx: [Option<TxInfo>; MAX_TX],
     /// Receiver info, once known.
     pub rx: Option<RxInfo>,
     /// Current value slug of every writable setting, keyed by setting id.
@@ -98,7 +124,7 @@ impl DeviceStatus {
             model_id: model_id.into(),
             connected: false,
             nc_enabled: false,
-            tx: [None, None],
+            tx: Default::default(),
             rx: None,
             settings: BTreeMap::new(),
             protocol_version: None,

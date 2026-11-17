@@ -532,3 +532,111 @@ off). Each TX slot opens `02 01`/`02 02` — record tag `0x02` plus the
 physical unit (TX1/TX2) — followed by `00 00 00 1a` (reserved, then length
 26). TX slot flags (+6) = `0xb8` (LEDs on, TX auto-off on, NC-button
 permission on), low-cut byte (+9) = `0x01` (low cut off).
+
+---
+
+## DJI Mic 3
+
+Observed on a Mic 3 receiver (firmware `03.01.00.10`), USB identifiers
+**vendor `0x2ca3`, product `0x4015`** (`0x4115` while in four-channel mode —
+switching to or from that mode makes the receiver re-enumerate).
+
+The receiver speaks the v2 dialect described above, unchanged in framing,
+CRC, command shape and push layout, but on a different interface:
+
+- **Interface 4** (`com.dji.mic`, class `ff/f0/01`), **alternate setting 1**.
+  Alternate setting 0 has no endpoints.
+- **Bulk OUT `0x01`**, **Bulk IN `0x81`**.
+
+No iAP/External Accessory handshake is needed: status pushes start as soon
+as alternate setting 1 is selected.
+
+Differences from the Mic Mini:
+
+- **ACK result code.** Offset 11 of the 14-byte ACK is `0x00` when the
+  command was applied and `0xff` when the receiver rejected it.
+- **Dropped first command.** The first command written after opening the
+  interface is sometimes neither applied nor acknowledged; re-sending it
+  works.
+- **Keep-alive push.** A 14-byte frame `… 00 5b 04 06 <crc>` arrives about
+  twice a second. It needs no reply.
+- **Status push rate** is about 1 Hz with no transmitter connected.
+
+Receiver commands (target `0x0000`), confirmed by write and status readback:
+
+| Setting                  | Cmd      | Values                                   | Status readback            |
+| ------------------------ | -------- | ---------------------------------------- | -------------------------- |
+| Audio channels           | `0x0008` | `0x00` mono, `0x02` stereo, `0x04` 4-ch  | offset 21: `0x04` / `0x08` |
+| Receiver gain            | `0x0039` | signed dB: −12, −6, 0, +6, +12           | offset 22, signed          |
+| Monitoring gain          | `0x0026` | signed dB, −12…+12 in 1 dB steps         | offset 27, signed          |
+| Auto off (receiver)      | `0x0010` | `0x00` off, `0x01` on                    | offset 21 bit `0x01`       |
+| Turn on with camera      | `0x0020` | `0x00` off, `0x01` on                    | offset 20 bit `0x80`       |
+
+Rejected (`0xff`) with no transmitter connected: Safety track (`0x0021`) and
+Clip limiter (`0x001e`).
+
+Offset 21 also appears to carry the receiver's own battery: bit `0x10`
+charging, bits `0xe0` a 3-bit gauge like the transmitter's (unconfirmed).
+
+Rejected (`0xff`) even with a transmitter connected: Safety track
+(`0x0021`), Clip limiter (`0x001e`), and per-transmitter `0x003e` / `0x003d`.
+
+Transmitter commands, confirmed by write and status readback with two
+transmitters connected. The broadcast ones in the Commands table above
+(`0x0037`, `0x0038`, `0x000f`, `0x0003`, `0x000a`, `0x0010`) behave exactly
+as on the Mic Mini. Slot offsets are relative to the 32-byte TX slot.
+
+"Mirrored" settings are applied to every transmitter even when the command
+is addressed to one (`0x0001`), so they're best sent as a broadcast.
+
+| Setting                   | Cmd      | Scope     | Values                          | Slot readback        |
+| ------------------------- | -------- | --------- | ------------------------------- | -------------------- |
+| Clipping control          | `0x0024` | mirrored  | `0x00` off, `0x01` on           | `+8` bit `0x04`      |
+| Loudness balance          | `0x002c` | mirrored  | `0x01` off, `0x02` on           | `+11` bit `0x80`     |
+| Vibration                 | `0x0004` | mirrored  | `0x00` off, `0x01` on           | `+9` bit `0x01`      |
+| 32-bit float recording    | `0x000c` | mirrored  | `0x00` off, `0x01` on           | `+9` bit `0x08`      |
+| Loop recording            | `0x002a` | mirrored  | `0x00` off, `0x01` on           | `+11` bit `0x08`     |
+| Low-battery auto record   | `0x002b` | mirrored  | `0x00` off, `0x01` on           | `+11` bit `0x10`     |
+| Record on power-on        | `0x002e` | mirrored  | `0x00` off, `0x01` on           | `+8` bit `0x80`      |
+| Audio recording via button | `0x000b` | mirrored | `0x00` off, `0x01` on           | `+11` bit `0x20`     |
+| Voice tone                | `0x0029` | per TX    | `0x00`/`0x01`/`0x02`            | `+9` bits `0x40`/`0x80` |
+| Transmitter gain          | `0x0039` | per TX    | signed dB, −12…+12              | `+13`, signed        |
+| Internal recording        | `0x0002` | per TX    | `0x00` stop, `0x01` start       | `+9` bit `0x10`      |
+
+Clock sync: a 29-byte command to the receiver, command `0x0033`, payload
+length `0x08`, payload `09 YY MM DD hh mm ss 00` (year mod 100, local time).
+ACKed with `0x00`; sent once on connect so internal recordings get correct
+timestamps.
+
+Receiver radio settings, header offset 20: bit `0x01` set = Environment
+"Outdoors" (clear = "Indoors"), bit `0x04` = Lossless Audio. Lossless is
+written with command `0x0027` (receiver target, `0x00`/`0x01`); no write
+command for Environment is known, so it's read-only here. Mute is command
+`0x0009` per transmitter, read back at slot `+6` bit `0x04`. Both commands,
+and the environment bits, match
+[SanMurakami/mic3-bridge](https://github.com/SanMurakami/mic3-bridge).
+
+Receiver battery: header offset 21 bits `0xe0` are a 1 (full) … 7 gauge and
+bit `0x10` is set while charging (seen as `0x51` = gauge 2, charging, while
+powered over USB).
+
+Rejected (`0xff`): channel mode value `0x01` (no safety-track channel mode),
+`0x003e` and `0x003d` to any target.
+
+**Do not send `0x0007` to a transmitter.** dji-mic-mo uses it (value `0x01`)
+to format the transmitter's internal storage. Value `0x00` was sent once by
+mistake while mapping this protocol: it was ACKed, storage capacity was
+unchanged, and slot `+9` bit `0x04` has been set on that transmitter since.
+
+Slot `+14` and `+16` are the transmitter's total and remaining internal
+recording time, 16-bit little-endian, in tenths of an hour. The slot's unit
+byte (`+1`) is a bitmask on this receiver (`1`, `2`, `4`, `8` for TX1–TX4).
+Header offset 20 bit `0x40` is set while any transmitter is recording.
+
+Command ids and offsets were cross-checked against
+[usokawa/dji-mic-mo](https://github.com/usokawa/dji-mic-mo).
+
+Safety Track does not exist on the Mic 3 (DJI dropped it; the manual lists
+only Mono, Stereo and Quadraphonic). `0x0021` is rejected; channel-mode
+values `0x03` and `0x06` are ACKed but change nothing (`0x03` makes the
+receiver re-enumerate and come back in mono).

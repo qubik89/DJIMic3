@@ -1,12 +1,15 @@
 <script>
+  import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import Sidebar from "./lib/Sidebar.svelte";
+  import { t, locale, selectLocale } from "./lib/i18n.js";
+  import { LOCALES } from "./lib/translations.js";
   import DevicePanel from "./lib/DevicePanel.svelte";
   import UdevModal from "./lib/UdevModal.svelte";
+  import Toast from "./lib/ui/Toast.svelte";
   import { snapshot, setSetting, setTxSetting, udevHelp } from "./lib/api.js";
 
-  // Custom window chrome. macOS keeps its native traffic lights (via the
-  // Overlay title bar); Windows/Linux use our own frameless controls.
+  // Custom window chrome. macOS keeps its native traffic lights (overlay
+  // title bar); Windows/Linux draw their own controls and resize handles.
   const appWindow = getCurrentWindow();
   const isMac = /Mac/i.test(navigator.userAgent || navigator.platform || "");
   let maximized = $state(false);
@@ -20,45 +23,80 @@
   const minimizeWin = () => appWindow.minimize();
   const toggleMaxWin = () => appWindow.toggleMaximize();
   const closeWin = () => appWindow.close();
-
-  // Frameless windows lose the compositor's edge-resize borders, so we add our
-  // own invisible handles (Linux/Windows; macOS keeps its native resize).
   const startResize = (dir) => (e) => {
     if (e.button === 0) appWindow.startResizeDragging(dir);
   };
 
+  // ---- Persisted UI preferences --------------------------------------------
+  const THEME_KEY = "djimic.theme";
+  const TAB_KEY = "djimic.tab";
+  const load = (key) => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  };
+  const save = (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      /* session-only */
+    }
+  };
+  const systemTheme = () =>
+    window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  let theme = $state(load(THEME_KEY) === "light" || load(THEME_KEY) === "dark" ? load(THEME_KEY) : systemTheme());
+  let settingsTab = $state(load(TAB_KEY));
+  function toggleTheme() {
+    theme = theme === "dark" ? "light" : "dark";
+    save(THEME_KEY, theme);
+  }
+  function selectTab(tab) {
+    settingsTab = tab;
+    save(TAB_KEY, tab);
+  }
+  $effect(() => {
+    document.documentElement.dataset.theme = theme;
+  });
+
+  // ---- Device state -----------------------------------------------------------
   let snap = $state(null);
   let selected = $state(null);
-  // Distinguishes "nothing selected yet" (auto-select the first device once
-  // one shows up) from "the user deliberately cleared the selection" (leave
-  // it cleared until they pick one again).
-  let userDeselected = $state(false);
-  let sidebarOpen = $state(true);
   let pending = $state({});
-  let optimistic = $state({}); // values shown immediately, before the device confirms
-  // Per-TX-targeted settings (currently just Voice Tone) don't fit the flat
-  // `settings`/`optimistic` maps above, since the same setting id can hold a
-  // different value per transmitter slot — keyed by 0-based TX index instead.
+  let optimistic = $state({}); // receiver/broadcast values shown before the device confirms
   let pendingTx = $state({});
-  let optimisticVoiceTone = $state({});
-  let view = $state("compact");
+  let optimisticTx = $state({}); // "slot:settingId" → value
   let error = $state(null);
+  let toast = $state(null);
+  let toastKey = 0;
+  function showToast(msg, kind = "info") {
+    toast = { msg, kind, key: ++toastKey };
+  }
 
   let showUdev = $state(false);
-  let help = $state(null);
+  let udev = $state(null);
 
   const devices = $derived(snap?.devices ?? []);
   const selectedDevice = $derived(devices.find((d) => d.id === selected) ?? null);
   const rawStatus = $derived(selectedDevice ? snap?.status ?? null : null);
-  // Merge live values with any not-yet-confirmed local changes for instant feedback.
   const values = $derived({ ...(rawStatus?.settings ?? {}), ...optimistic });
-  // Same, for each TX slot's Voice Tone.
   const status = $derived(
     rawStatus && {
       ...rawStatus,
-      tx: rawStatus.tx.map((t, i) =>
-        t && optimisticVoiceTone[i] !== undefined ? { ...t, voice_tone: optimisticVoiceTone[i] } : t,
-      ),
+      tx: rawStatus.tx.map((tx, i) => {
+        if (!tx) return tx;
+        const overrides = Object.entries(optimisticTx).filter(([k]) => k.startsWith(`${i}:`));
+        if (overrides.length === 0) return tx;
+        const settings = { ...(tx.settings ?? {}) };
+        let voice_tone = tx.voice_tone;
+        for (const [k, v] of overrides) {
+          const id = k.slice(k.indexOf(":") + 1);
+          settings[id] = v;
+          if (id === "voice-tone") voice_tone = v;
+        }
+        return { ...tx, settings, voice_tone };
+      }),
     },
   );
   const linuxAccessIssue = $derived(
@@ -69,38 +107,27 @@
     try {
       const next = await snapshot(selected);
       snap = next;
-      // Auto-select once devices show up, unless the user deliberately
-      // cleared the selection (clicking empty space in the sidebar).
-      if (!selected && !userDeselected && next.devices.length > 0) {
-        selected = next.devices[0].id;
-      }
-      // Drop a stale selection.
+      if (!selected && next.devices.length > 0) selected = next.devices[0].id;
       if (selected && !next.devices.some((d) => d.id === selected)) {
         selected = next.devices[0]?.id ?? null;
       }
-      // Retire optimistic values the device has now confirmed.
+      // Drop optimistic values once the device reports them.
       const confirmed = next.status?.settings ?? {};
-      let changed = false;
-      const remaining = { ...optimistic };
-      for (const k of Object.keys(remaining)) {
-        if (confirmed[k] === remaining[k]) {
-          delete remaining[k];
-          changed = true;
-        }
-      }
-      if (changed) optimistic = remaining;
+      const remaining = Object.fromEntries(
+        Object.entries(optimistic).filter(([k, v]) => confirmed[k] !== v),
+      );
+      if (Object.keys(remaining).length !== Object.keys(optimistic).length) optimistic = remaining;
 
-      // Same, for each TX slot's Voice Tone.
-      const confirmedTx = next.status?.tx ?? [];
-      let changedTx = false;
-      const remainingTx = { ...optimisticVoiceTone };
-      for (const k of Object.keys(remainingTx)) {
-        if (confirmedTx[k]?.voice_tone === remainingTx[k]) {
-          delete remainingTx[k];
-          changedTx = true;
-        }
-      }
-      if (changedTx) optimisticVoiceTone = remainingTx;
+      const txs = next.status?.tx ?? [];
+      const remainingTx = Object.fromEntries(
+        Object.entries(optimisticTx).filter(([k, v]) => {
+          const [slot, id] = [Number(k.slice(0, k.indexOf(":"))), k.slice(k.indexOf(":") + 1)];
+          const tx = txs[slot];
+          const actual = id === "voice-tone" ? tx?.settings?.[id] ?? tx?.voice_tone : tx?.settings?.[id];
+          return tx && actual !== v;
+        }),
+      );
+      if (Object.keys(remainingTx).length !== Object.keys(optimisticTx).length) optimisticTx = remainingTx;
     } catch (e) {
       error = String(e);
     }
@@ -108,13 +135,14 @@
 
   function select(id) {
     selected = id;
-    userDeselected = id === null;
+    optimistic = {};
+    optimisticTx = {};
     refresh();
   }
 
   async function change(settingId, value) {
     if (!selected) return;
-    optimistic = { ...optimistic, [settingId]: value }; // reflect the flip instantly
+    optimistic = { ...optimistic, [settingId]: value };
     pending = { ...pending, [settingId]: true };
     error = null;
     try {
@@ -122,6 +150,7 @@
       await refresh();
     } catch (e) {
       error = String(e);
+      showToast(error, "error");
       const { [settingId]: _drop, ...rest } = optimistic;
       optimistic = rest;
     } finally {
@@ -132,11 +161,8 @@
 
   async function changeTx(tx, settingId, value) {
     if (!selected) return;
-    // Only Voice Tone exists today; extend this map if a second per-TX
-    // setting is added.
-    if (settingId === "voice-tone") {
-      optimisticVoiceTone = { ...optimisticVoiceTone, [tx]: value }; // reflect instantly
-    }
+    const key = `${tx}:${settingId}`;
+    optimisticTx = { ...optimisticTx, [key]: value };
     pendingTx = { ...pendingTx, [tx]: true };
     error = null;
     try {
@@ -144,8 +170,9 @@
       await refresh();
     } catch (e) {
       error = String(e);
-      const { [tx]: _drop, ...rest } = optimisticVoiceTone;
-      optimisticVoiceTone = rest;
+      showToast(error, "error");
+      const { [key]: _drop, ...rest } = optimisticTx;
+      optimisticTx = rest;
     } finally {
       const { [tx]: _p, ...rest } = pendingTx;
       pendingTx = rest;
@@ -153,7 +180,7 @@
   }
 
   async function openUdev() {
-    if (!help) help = await udevHelp();
+    if (!udev) udev = await udevHelp();
     showUdev = true;
   }
 
@@ -163,13 +190,19 @@
     return () => clearInterval(timer);
   });
 
-  // Keep the maximize/restore icon in sync with the window state.
   $effect(() => {
     refreshMax();
     const onResize = () => refreshMax();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   });
+
+  // Keep <html lang> and the native tray/app menus in the chosen language.
+  $effect(() => {
+    document.documentElement.lang = $locale;
+    invoke("set_locale", { locale: $locale }).catch(() => {});
+  });
+  const localeCode = $derived(($locale ?? "en").split("-")[0].toUpperCase());
 </script>
 
 <div class="app" class:mac={isMac}>
@@ -185,29 +218,44 @@
   {/if}
 
   <div class="topbar" class:mac={isMac} data-tauri-drag-region>
-    <button class="icon-btn" onclick={() => (sidebarOpen = !sidebarOpen)} aria-label="Toggle devices">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-        <path d="M3.5 6h17M3.5 12h17M3.5 18h17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-      </svg>
-    </button>
     <span class="brand" data-tauri-drag-region>DJI Mic Control</span>
     <div class="drag-fill" data-tauri-drag-region></div>
+    <div class="top-actions">
+      <button class="icon-btn" onclick={toggleTheme} aria-label={$t("Toggle theme")} title={$t("Toggle theme")}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6" />
+          <path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor" />
+        </svg>
+      </button>
+      <label class="language" title={$t("Language")}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6" />
+          <path d="M3 12h18M12 3c2.6 2.6 3.9 5.6 3.9 9s-1.3 6.4-3.9 9c-2.6-2.6-3.9-5.6-3.9-9S9.4 5.6 12 3z" stroke="currentColor" stroke-width="1.6" />
+        </svg>
+        {localeCode}
+        <select aria-label={$t("Language")} value={$locale} onchange={(e) => selectLocale(e.currentTarget.value)}>
+          {#each LOCALES as l (l.code)}
+            <option value={l.code}>{l.name}</option>
+          {/each}
+        </select>
+      </label>
+    </div>
 
     {#if !isMac}
       <div class="win-controls">
-        <button class="win-btn" onclick={minimizeWin} aria-label="Minimize">
+        <button class="win-btn" onclick={minimizeWin} aria-label={$t("Minimize")}>
           <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" stroke-width="1.2" /></svg>
         </button>
-        <button class="win-btn" onclick={toggleMaxWin} aria-label={maximized ? "Restore" : "Maximize"}>
+        <button class="win-btn" onclick={toggleMaxWin} aria-label={maximized ? $t("Restore") : $t("Maximize")}>
           {#if maximized}
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1">
-              <rect x="3.2" y="1.6" width="6.2" height="6.2" rx="1" /><rect x="1.6" y="3.6" width="6.2" height="6.8" rx="1" fill="var(--bg-panel)" />
+              <rect x="3.2" y="1.6" width="6.2" height="6.2" rx="1" /><rect x="1.6" y="3.6" width="6.2" height="6.8" rx="1" fill="var(--bg)" />
             </svg>
           {:else}
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="2" y="2" width="8" height="8" rx="1" /></svg>
           {/if}
         </button>
-        <button class="win-btn close" onclick={closeWin} aria-label="Close">
+        <button class="win-btn close" onclick={closeWin} aria-label={$t("Close")}>
           <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" /></svg>
         </button>
       </div>
@@ -216,190 +264,204 @@
 
   {#if linuxAccessIssue}
     <button class="banner" onclick={openUdev}>
-      A microphone is connected but not accessible — click to fix USB permissions.
+      {$t("A microphone is connected but not accessible — click to fix USB permissions.")}
     </button>
   {/if}
 
-  {#if error}
-    <div class="banner err" role="alert">{error}</div>
-  {/if}
-
-  <div class="body">
-    <div class="sidebar-wrap" class:open={sidebarOpen}>
-      <Sidebar {devices} {selected} onselect={select} />
-    </div>
-
-    <main class="main">
-      {#if selectedDevice && status}
-        <DevicePanel
-          device={selectedDevice}
-          {status}
-          settings={snap.settings}
-          {values}
-          {pending}
-          {pendingTx}
-          {view}
-          onchange={change}
-          onchangeTx={changeTx}
-          onview={(v) => (view = v)}
-        />
-      {:else}
-        <div class="placeholder">
-          <div class="ph-card">
-            {#if linuxAccessIssue}
-              <h2>Permission needed</h2>
-              <p>A supported microphone is connected but can't be accessed.</p>
-              <button class="cta" onclick={openUdev}>Show setup instructions</button>
-            {:else if devices.length > 0}
-              <h2>No device selected</h2>
-              <p>Choose a device from the sidebar.</p>
-            {:else}
-              <h2>No microphone connected</h2>
-              <p>Connect a supported DJI microphone over USB to get started.</p>
-            {/if}
-          </div>
+  <main class="main">
+    {#if selectedDevice && status}
+      <DevicePanel
+        device={selectedDevice}
+        {devices}
+        {status}
+        settings={snap.settings}
+        {values}
+        {pending}
+        {pendingTx}
+        tab={settingsTab}
+        onchange={change}
+        onchangeTx={changeTx}
+        onselect={select}
+        ontab={selectTab}
+        ontoast={showToast}
+      />
+    {:else}
+      <div class="placeholder">
+        <div class="ph-card">
+          {#if linuxAccessIssue}
+            <h2>{$t("Permission needed")}</h2>
+            <p>{$t("A supported microphone is connected but can't be accessed.")}</p>
+            <button class="cta" onclick={openUdev}>{$t("Show setup instructions")}</button>
+          {:else}
+            <h2>{$t("No microphone connected")}</h2>
+            <p>{$t("Connect a supported DJI microphone over USB to get started.")}</p>
+          {/if}
         </div>
-      {/if}
-    </main>
-  </div>
+      </div>
+    {/if}
+  </main>
+
+  <Toast {toast} />
 </div>
 
-{#if showUdev && help}
-  <UdevModal {help} onclose={() => (showUdev = false)} />
+{#if showUdev && udev}
+  <UdevModal help={udev} onclose={() => (showUdev = false)} />
 {/if}
 
 <style>
   .app {
+    position: relative;
     height: 100%;
     display: flex;
     flex-direction: column;
-    /* The window is frameless on some platforms (no native border/shadow),
-       so a solid-color desktop behind it can make the edge disappear
-       entirely without this. Not needed on macOS, which already has native
-       decorations (see .mac below). */
-    border: 1px solid var(--border);
+    background: var(--bg);
+    /* Frameless windows (Windows/Linux) need their own edge. */
+    border: 1px solid var(--line);
   }
   .app.mac {
     border: none;
   }
-  /* Invisible resize handles pinned to the window edges/corners. */
   .rz {
     position: fixed;
     z-index: 100;
   }
-  .rz-n {
-    top: 0;
+  .rz-n,
+  .rz-s {
     left: 8px;
     right: 8px;
     height: 5px;
     cursor: ns-resize;
+  }
+  .rz-n {
+    top: 0;
   }
   .rz-s {
     bottom: 0;
-    left: 8px;
-    right: 8px;
-    height: 5px;
-    cursor: ns-resize;
   }
-  .rz-e {
-    top: 8px;
-    bottom: 8px;
-    right: 0;
-    width: 5px;
-    cursor: ew-resize;
-  }
+  .rz-e,
   .rz-w {
     top: 8px;
     bottom: 8px;
-    left: 0;
     width: 5px;
     cursor: ew-resize;
+  }
+  .rz-e {
+    right: 0;
+  }
+  .rz-w {
+    left: 0;
+  }
+  .rz-ne,
+  .rz-nw,
+  .rz-se,
+  .rz-sw {
+    width: 11px;
+    height: 11px;
   }
   .rz-ne {
     top: 0;
     right: 0;
-    width: 11px;
-    height: 11px;
     cursor: nesw-resize;
   }
   .rz-nw {
     top: 0;
     left: 0;
-    width: 11px;
-    height: 11px;
     cursor: nwse-resize;
   }
   .rz-se {
     bottom: 0;
     right: 0;
-    width: 11px;
-    height: 11px;
     cursor: nwse-resize;
   }
   .rz-sw {
     bottom: 0;
     left: 0;
-    width: 11px;
-    height: 11px;
     cursor: nesw-resize;
   }
+
   .topbar {
     position: relative;
     flex: 0 0 auto;
-    height: 30px;
+    height: 40px;
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 0 2px 0 4px;
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border);
+    padding: 0 6px 0 14px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
     user-select: none;
   }
-  /* Leave room for the macOS traffic lights (top-left) under the overlay title bar. */
   .topbar.mac {
     padding-left: 76px;
+    padding-right: 14px;
   }
-  .drag-fill {
-    flex: 1 1 auto;
-    align-self: stretch;
-  }
-  .icon-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    line-height: 0;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-dim);
-  }
-  .icon-btn:hover {
-    background: var(--bg-elev);
-    color: var(--text);
-  }
-  /* Kill inline-svg baseline gap so icons sit dead-center in their buttons. */
-  .topbar button svg {
-    display: block;
-  }
-  /* Absolutely centered so it stays put regardless of the side controls. */
   .brand {
     position: absolute;
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    font-weight: 600;
-    font-size: 13px;
-    letter-spacing: 0.01em;
-    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--dim);
     white-space: nowrap;
+  }
+  .drag-fill {
+    flex: 1 1 auto;
+    align-self: stretch;
+  }
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .icon-btn {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--dim);
+    transition: background 0.15s, color 0.15s;
+  }
+  .icon-btn:hover {
+    background: var(--raise);
+    color: var(--text);
+  }
+  .topbar svg {
+    display: block;
+  }
+  .language {
+    position: relative;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    border: 1px solid var(--line2);
+    border-radius: 999px;
+    color: var(--dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+  .language:hover {
+    color: var(--text);
+  }
+  /* The native select sits invisibly on top: the pill shows the code, the
+     dropdown lists full names. */
+  .language select {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
   }
   .win-controls {
     display: flex;
     align-self: stretch;
-    margin-left: 4px;
+    margin-left: 8px;
   }
   .win-btn {
     width: 40px;
@@ -408,11 +470,11 @@
     place-items: center;
     border: none;
     background: transparent;
-    color: var(--text-dim);
+    color: var(--dim);
     transition: background 0.12s, color 0.12s;
   }
   .win-btn:hover {
-    background: var(--bg-elev);
+    background: var(--raise);
     color: var(--text);
   }
   .win-btn.close:hover {
@@ -424,36 +486,14 @@
     text-align: left;
     border: none;
     padding: 10px 16px;
-    background: color-mix(in srgb, var(--warn) 16%, var(--bg-panel));
+    background: color-mix(in srgb, var(--warn) 16%, var(--bg));
     color: var(--text);
     border-bottom: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
     font-size: 13px;
   }
-  .banner.err {
-    background: color-mix(in srgb, var(--danger) 16%, var(--bg-panel));
-    border-bottom-color: color-mix(in srgb, var(--danger) 40%, transparent);
-  }
-  .body {
-    flex: 1 1 auto;
-    display: flex;
-    min-height: 0;
-  }
-  /* Collapsible sidebar: animate width so the panel slides in/out. The inner
-     Sidebar keeps a fixed width and is clipped, giving a smooth slide. */
-  .sidebar-wrap {
-    flex: 0 0 auto;
-    width: 260px;
-    overflow: hidden;
-    border-right: 1px solid var(--border);
-    transition: width 0.22s ease, border-color 0.22s ease;
-  }
-  .sidebar-wrap:not(.open) {
-    width: 0;
-    border-right-color: transparent;
-  }
   .main {
     flex: 1 1 auto;
-    min-width: 0;
+    min-height: 0;
     display: flex;
   }
   .placeholder {
@@ -464,24 +504,27 @@
   }
   .ph-card {
     text-align: center;
-    max-width: 340px;
-    color: var(--text-dim);
+    max-width: 360px;
+    color: var(--dim);
   }
   .ph-card h2 {
     margin: 0 0 8px;
     color: var(--text);
-    font-size: 18px;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
   .ph-card p {
     margin: 0 0 16px;
     line-height: 1.5;
   }
   .cta {
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: var(--accent-contrast);
-    padding: 8px 16px;
-    border-radius: var(--radius-sm);
-    font-weight: 600;
+    height: 38px;
+    padding: 0 16px;
+    border: none;
+    border-radius: 10px;
+    background: var(--inv);
+    color: var(--invInk);
+    font-weight: 500;
   }
 </style>

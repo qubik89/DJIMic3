@@ -50,6 +50,22 @@ pub fn now_millis() -> u64 {
         .unwrap_or(0)
 }
 
+/// How many bulk-IN reads to wait for a command's ACK before re-sending it.
+/// The device pushes status at least twice a second even with no transmitter
+/// connected, so this bounds the wait to a second or two.
+const ACK_WAIT_READS: u8 = 3;
+/// How many times an unacknowledged command is re-sent before giving up.
+const ACK_RETRIES: u8 = 2;
+
+/// A command written to the device whose ACK hasn't arrived yet.
+struct Pending {
+    seq: u16,
+    packet: Vec<u8>,
+    reads_left: u8,
+    attempts_left: u8,
+    resp: std::sync::mpsc::Sender<Result<()>>,
+}
+
 /// What the event loop woke up for.
 enum Wake {
     Read(nusb::transfer::Completion<Vec<u8>>),
@@ -91,13 +107,30 @@ async fn run(
     // continuously as soon as the device is opened).
     let mut dialect = Dialect::V2;
 
+    // The command currently awaiting its ACK, if any. While one is in flight
+    // no further command is accepted: the device answers each with a 14-byte
+    // ACK echoing its sequence number (see `PROTOCOL.md`), carrying a result
+    // code at offset 11 (`0x00` = applied). Some receivers silently drop the
+    // first command sent after the interface is opened, so an unacknowledged
+    // command is re-sent a few times before giving up.
+    let mut pending: Option<Pending> = None;
+    // One-shot packets the model wants sent once the device is streaming
+    // (e.g. a clock sync). Queued on the first decoded status and sent like
+    // commands, ACK and retries included, with nobody waiting on the result.
+    let mut connect_queue: Vec<Vec<u8>> = Vec::new();
+    let mut connected_once = false;
+
     loop {
         let read = iface.bulk_in(ep_in, RequestBuffer::new(512));
-        let wake = future::or(
-            async { Wake::Read(read.await) },
-            async { Wake::Command(cmd_rx.recv().await) },
-        )
-        .await;
+        let wake = if pending.is_some() {
+            Wake::Read(read.await)
+        } else {
+            future::or(
+                async { Wake::Read(read.await) },
+                async { Wake::Command(cmd_rx.recv().await) },
+            )
+            .await
+        };
 
         match wake {
             Wake::Read(comp) => {
@@ -110,12 +143,31 @@ async fn run(
                     );
                 }
                 if comp.status.is_err() {
-                    break; // device unplugged or fatal transfer error
+                    // Device unplugged or fatal transfer error. A command
+                    // that was written but not yet acknowledged may be the
+                    // very thing that made the device re-enumerate (e.g. a
+                    // channel-mode change), so report it as sent.
+                    if let Some(p) = pending.take() {
+                        let _ = p.resp.send(Ok(()));
+                    }
+                    break;
                 }
                 buf.extend_from_slice(&comp.data);
                 while let Some(frame) = packet::take_frame(&mut buf) {
                     if let Some(d) = packet::heartbeat_dialect(&frame) {
                         dialect = d;
+                    }
+                    if packet::frame_kind(&frame) == packet::FrameKind::Ack {
+                        let ack_seq = u16::from_le_bytes([frame[6], frame[7]]);
+                        if pending.as_ref().is_some_and(|p| p.seq == ack_seq) {
+                            let p = pending.take().unwrap();
+                            let code = frame.get(11).copied().unwrap_or(0);
+                            let _ = p.resp.send(if code == 0 {
+                                Ok(())
+                            } else {
+                                Err(DeviceError::Rejected(code))
+                            });
+                        }
                     }
                     let previous = status.lock().unwrap().clone();
                     let new_status = model.decode(&previous, &frame);
@@ -130,20 +182,77 @@ async fn run(
                     if let Some(new_status) = new_status {
                         *status.lock().unwrap() = new_status;
                         last_seen.store(now_millis(), Ordering::Relaxed);
+                        if !connected_once {
+                            connected_once = true;
+                            connect_queue = model.connect_commands(seq);
+                            seq = seq.wrapping_add(connect_queue.len() as u16);
+                            connect_queue.reverse();
+                        }
+                    }
+                }
+                if pending.is_none() {
+                    if let Some(pkt) = connect_queue.pop() {
+                        let pkt_seq = u16::from_le_bytes([pkt[6], pkt[7]]);
+                        let (resp, _) = std::sync::mpsc::channel();
+                        if iface.bulk_out(ep_out, pkt.clone()).await.status.is_ok() {
+                            pending = Some(Pending {
+                                seq: pkt_seq,
+                                packet: pkt,
+                                reads_left: ACK_WAIT_READS,
+                                attempts_left: ACK_RETRIES,
+                                resp,
+                            });
+                        }
+                        continue;
+                    }
+                }
+                // No ACK among the frames of this read: count it against the
+                // pending command, re-sending or giving up as it runs out.
+                if let Some(p) = pending.as_mut() {
+                    p.reads_left -= 1;
+                    if p.reads_left == 0 {
+                        if p.attempts_left == 0 {
+                            let p = pending.take().unwrap();
+                            let _ = p.resp.send(Err(DeviceError::NoAck));
+                        } else {
+                            p.attempts_left -= 1;
+                            p.reads_left = ACK_WAIT_READS;
+                            let comp = iface.bulk_out(ep_out, p.packet.clone()).await;
+                            if let Err(e) = comp.status {
+                                let p = pending.take().unwrap();
+                                let _ = p.resp.send(Err(DeviceError::Usb(format!("{e:?}"))));
+                            }
+                        }
                     }
                 }
             }
             Wake::Command(Ok(cmd)) => {
-                let result = match model.build_command(seq, dialect, &cmd.setting_id, &cmd.value, cmd.tx) {
+                match model.build_command(seq, dialect, &cmd.setting_id, &cmd.value, cmd.tx) {
                     Some(pkt) => {
+                        let sent_seq = seq;
                         seq = seq.wrapping_add(1);
-                        let comp = iface.bulk_out(ep_out, pkt).await;
-                        comp.status
-                            .map_err(|e| DeviceError::Usb(format!("{e:?}")))
+                        let comp = iface.bulk_out(ep_out, pkt.clone()).await;
+                        match comp.status {
+                            Ok(()) => {
+                                pending = Some(Pending {
+                                    seq: sent_seq,
+                                    packet: pkt,
+                                    reads_left: ACK_WAIT_READS,
+                                    attempts_left: ACK_RETRIES,
+                                    resp: cmd.resp,
+                                });
+                            }
+                            Err(e) => {
+                                let _ = cmd.resp.send(Err(DeviceError::Usb(format!("{e:?}"))));
+                            }
+                        }
                     }
-                    None => Err(DeviceError::UnknownSetting(cmd.setting_id.clone())),
-                };
-                let _ = cmd.resp.send(result);
+                    None => {
+                        let _ = cmd
+                            .resp
+                            .send(Err(DeviceError::UnknownSetting(cmd.setting_id.clone())));
+                    }
+                }
             }
             Wake::Command(Err(_)) => break, // manager dropped the sender
         }

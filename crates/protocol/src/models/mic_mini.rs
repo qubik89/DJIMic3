@@ -70,7 +70,7 @@ const G_AUDIO: &str = "Audio";
 const G_POWER: &str = "Power & Startup";
 const G_DEVICE: &str = "Device";
 
-static SETTINGS: [Setting; 13] = [
+pub(super) static SETTINGS: [Setting; 13] = [
     Setting {
         id: "noise-cancel",
         label: "Noise Cancel",
@@ -287,6 +287,9 @@ fn parse_v1_slot(f: &[u8], off: usize) -> Option<V1Slot> {
                 voice_tone: None,
                 charging: None,
                 battery: None,
+                settings: Default::default(),
+                rec_total: None,
+                rec_remaining: None,
             }),
             state,
             flags,
@@ -330,13 +333,14 @@ fn decode_v1(f: &[u8]) -> Option<DeviceStatus> {
     let rx = RxInfo {
         firmware: Some(read_firmware(&f[rx_off + 2..rx_off + 6])),
         serial: Some(read_ascii_field(&f[rx_off + 7..rx_off + 21])),
+        ..RxInfo::unknown()
     };
     let plug_free_on = f[rx_off + 21] == 0x01;
 
     let mut status = DeviceStatus::disconnected(MODEL_ID);
     status.connected = true;
     status.nc_enabled = flags & 0x01 != 0;
-    status.tx = [slot_a.tx, slot_b.tx];
+    status.tx = [slot_a.tx, slot_b.tx, None, None];
     status.rx = Some(rx);
 
     let s = &mut status.settings;
@@ -387,7 +391,7 @@ fn decode_v2_status(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
     if remainder % V2_TX_SLOT_LEN != 0 {
         return None;
     }
-    let tx_count = (remainder / V2_TX_SLOT_LEN).min(2);
+    let tx_count = (remainder / V2_TX_SLOT_LEN).min(crate::state::MAX_TX);
 
     let flags1 = f[20]; // strong-NC 0x08, NC power 0x20, camera-power 0x80
     let flags2 = f[21]; // auto-off (RX) 0x01, stereo 0x04
@@ -420,6 +424,9 @@ fn decode_v2_status(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
                 voice_tone: None,
                 charging: None,
                 battery: None,
+                settings: Default::default(),
+                rec_total: None,
+                rec_remaining: None,
             })
         })
     });
@@ -431,7 +438,7 @@ fn decode_v2_status(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
     for slot_pos in 0..tx_count {
         let slot_off = V2_HEADER_LEN + V2_TX_SLOT_LEN * slot_pos;
         let unit = f[slot_off + 1];
-        let Some(i) = (unit as usize).checked_sub(1).filter(|&i| i < 2) else { continue };
+        let Some(i) = tx_slot(unit) else { continue };
         if let Some(tx) = status.tx[i].as_mut() {
             let tone = f[slot_off + 9];
             tx.voice_tone = Some(
@@ -450,7 +457,7 @@ fn decode_v2_status(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
         }
     }
     status.rx =
-        Some(previous.rx.clone().unwrap_or(RxInfo { serial: None, firmware: None }));
+        Some(previous.rx.clone().unwrap_or(RxInfo::unknown()));
 
     let s = &mut status.settings;
     s.insert("noise-cancel".into(), bit(flags1 & 0x08 != 0, "strong", "basic"));
@@ -492,6 +499,19 @@ fn decode_v2_status(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
 // - `0x04` (a 6-character hex-like id) also appears in the identity push but
 //   isn't modelled by `DeviceStatus` and is skipped.
 const RECORDS_START: usize = 14;
+
+/// Map a record's transmitter unit byte to a `DeviceStatus::tx` index. Units
+/// are a bitmask — `1`, `2`, `4`, `8` for TX1–TX4 — which for the first two
+/// coincides with the 1-based numbering two-transmitter receivers use.
+pub(super) fn tx_slot(unit: u8) -> Option<usize> {
+    match unit {
+        0x01 => Some(0),
+        0x02 => Some(1),
+        0x04 => Some(2),
+        0x08 => Some(3),
+        _ => None,
+    }
+}
 const RECORD_HEADER_LEN: usize = 6;
 
 fn decode_v2_records(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
@@ -523,12 +543,12 @@ fn decode_v2_records(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> 
                 let serial = read_ascii_field(&data[4..]);
                 match index {
                     0 => {
-                        let rx = status.rx.get_or_insert(RxInfo { serial: None, firmware: None });
+                        let rx = status.rx.get_or_insert(RxInfo::unknown());
                         rx.serial = Some(serial);
                         rx.firmware = Some(firmware);
                     }
-                    1 | 2 => {
-                        let i = (index - 1) as usize;
+                    _ if tx_slot(index).is_some() => {
+                        let i = tx_slot(index).unwrap();
                         if let Some(slot) = status.tx.get_mut(i) {
                             let tx = slot.get_or_insert_with(|| TxInfo {
                                 level: None,
@@ -538,6 +558,9 @@ fn decode_v2_records(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> 
                                 voice_tone: None,
                                 charging: None,
                                 battery: None,
+                                settings: Default::default(),
+                                rec_total: None,
+                                rec_remaining: None,
                             });
                             tx.serial = Some(serial);
                             tx.firmware = Some(firmware);
@@ -547,8 +570,8 @@ fn decode_v2_records(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> 
                 }
                 matched = true;
             }
-            0x05 if data.len() == 1 && (index == 1 || index == 2) => {
-                let i = (index - 1) as usize;
+            0x05 if data.len() == 1 && tx_slot(index).is_some() => {
+                let i = tx_slot(index).unwrap();
                 if let Some(slot) = status.tx.get_mut(i) {
                     slot.get_or_insert_with(|| TxInfo {
                         level: None,
@@ -558,13 +581,16 @@ fn decode_v2_records(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> 
                         voice_tone: None,
                         charging: None,
                         battery: None,
+                        settings: Default::default(),
+                        rec_total: None,
+                        rec_remaining: None,
                     })
                     .level = Some(data[0]);
                 }
                 matched = true;
             }
-            0x06 if index == 1 || index == 2 => {
-                let i = (index - 1) as usize;
+            0x06 if tx_slot(index).is_some() => {
+                let i = tx_slot(index).unwrap();
                 if let Some(slot) = status.tx.get_mut(i) {
                     slot.get_or_insert_with(|| TxInfo {
                         level: None,
@@ -574,6 +600,9 @@ fn decode_v2_records(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> 
                         voice_tone: None,
                         charging: None,
                         battery: None,
+                        settings: Default::default(),
+                        rec_total: None,
+                        rec_remaining: None,
                     })
                     .product_name = Some(read_ascii_field(data));
                 }
@@ -588,7 +617,7 @@ fn decode_v2_records(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> 
     matched.then_some(status)
 }
 
-fn decode_v2(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
+pub(super) fn decode_v2(previous: &DeviceStatus, f: &[u8]) -> Option<DeviceStatus> {
     decode_v2_status(previous, f).or_else(|| decode_v2_records(previous, f))
 }
 
@@ -962,8 +991,10 @@ mod tests {
         // `previous` as the status push already would have.
         let mut previous = fresh_status();
         previous.tx = [
-            Some(TxInfo { level: None, serial: None, firmware: None, product_name: None, voice_tone: None, charging: None, battery: None }),
-            Some(TxInfo { level: None, serial: None, firmware: None, product_name: None, voice_tone: None, charging: None, battery: None }),
+            Some(TxInfo { level: None, serial: None, firmware: None, product_name: None, voice_tone: None, charging: None, battery: None, settings: Default::default(), rec_total: None, rec_remaining: None }),
+            Some(TxInfo { level: None, serial: None, firmware: None, product_name: None, voice_tone: None, charging: None, battery: None, settings: Default::default(), rec_total: None, rec_remaining: None }),
+            None,
+            None,
         ];
         let st = MicMini.decode(&previous, &sample_level_2tx()).expect("decode");
         assert_eq!(st.tx[0].as_ref().unwrap().level, Some(0x30));
