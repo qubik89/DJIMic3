@@ -67,7 +67,7 @@ fn main() -> Result<()> {
         Command::List => list(&mgr, cli.json),
         Command::Status => {
             let id = resolve(&mgr, cli.device.as_deref())?;
-            let status = wait_connected(&mgr, &id)?;
+            let status = wait_identity(&mgr, &id, wait_connected(&mgr, &id)?);
             print_status(&mgr, &id, &status, cli.json)
         }
         Command::Get { setting, tx } => {
@@ -136,6 +136,23 @@ fn wait_connected(mgr: &DeviceManager, id: &str) -> Result<DeviceStatus> {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
+}
+
+/// Serial numbers and firmware versions arrive in their own pushes, sometimes
+/// well after the first status; give them a moment so `status` shows them.
+fn wait_identity(mgr: &DeviceManager, id: &str, mut status: DeviceStatus) -> DeviceStatus {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let known = |s: &DeviceStatus| {
+        s.rx.as_ref().is_some_and(|r| r.serial.is_some())
+            && s.tx.iter().flatten().all(|t| t.serial.is_some())
+    };
+    while !known(&status) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+        if let Ok(s) = mgr.status(id) {
+            status = s;
+        }
+    }
+    status
 }
 
 fn list(mgr: &DeviceManager, json: bool) -> Result<()> {
