@@ -30,7 +30,7 @@ Latest release: **[all files and notes](https://github.com/qubik89/DJIMic3/relea
 
 | Platform | Download | Status |
 | --- | --- | --- |
-| macOS (Apple Silicon) | [DJI-Mic-Control_macOS_arm64.dmg](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_macOS_arm64.dmg) | Tested with a DJI Mic 3 |
+| macOS (Apple Silicon) | [DJI-Mic-Control_macOS_arm64.dmg](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_macOS_arm64.dmg) | Signed and notarized; tested with a DJI Mic 3 |
 | Windows 10/11 (x64) | [Installer](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Windows_x64_setup.exe) · [portable .exe](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Windows_x64_portable.exe) | Built automatically, not yet tested on hardware |
 | Linux (x64) | [.deb](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_amd64.deb) · [.rpm](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_x86_64.rpm) · [AppImage](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_amd64.AppImage) | Built automatically, not yet tested on hardware |
 | Android 7+ (arm64) | APK, [built from source](#android) for now | Preview, not yet tested on hardware |
@@ -40,12 +40,12 @@ Checksums are in `SHA256SUMS.txt` on each release.
 **macOS**
 
 1. Open the `.dmg` and drag **DJI Mic Control** to **Applications**.
-2. The app isn't signed with an Apple developer account, so macOS may say it
-   is "damaged". Clear the quarantine flag once:
-   ```bash
-   sudo xattr -rd com.apple.quarantine "/Applications/DJI Mic Control.app"
-   ```
-3. Connect the receiver with a USB-C cable and open the app.
+2. Connect the receiver with a USB-C cable and open the app.
+
+Since 1.4.0 the app is signed with a Developer ID and notarized by Apple, so
+it opens normally. Versions up to 1.3.0 weren't signed: if macOS says one of
+those is "damaged", clear the quarantine flag once with
+`sudo xattr -rd com.apple.quarantine "/Applications/DJI Mic Control.app"`.
 
 **Windows**: install, then switch the receiver's control interface to WinUSB
 with Zadig (see [Platform notes](#platform-notes)). Windows SmartScreen may
