@@ -6,8 +6,10 @@
 node_modules/
 gui/dist/
 
-# Tauri generated
-gui/src-tauri/gen/
+# Tauri generated (the Android project in gen/android is kept: it holds the
+# USB plugin and manifest; its own .gitignore files exclude build output)
+gui/src-tauri/gen/schemas/
+gui/src-tauri/gen/apple/
 gui/src-tauri/target/
 
 # Local environment / secrets

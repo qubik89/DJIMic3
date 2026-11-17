@@ -9,6 +9,7 @@ pub enum Os {
     Linux,
     MacOs,
     Windows,
+    Android,
     Other,
 }
 
@@ -20,6 +21,8 @@ pub fn current_os() -> Os {
         Os::MacOs
     } else if cfg!(target_os = "windows") {
         Os::Windows
+    } else if cfg!(target_os = "android") {
+        Os::Android
     } else {
         Os::Other
     }

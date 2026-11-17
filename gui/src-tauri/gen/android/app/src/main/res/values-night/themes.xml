@@ -1,0 +1,8 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.djimic_gui" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Same background as the app, so launch and the system bars match it. -->
+        <item name="android:windowBackground">#0B0B0C</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

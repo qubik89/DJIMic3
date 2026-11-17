@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DJI wireless microphone receivers (USB vendor 0x2ca3). Plugging one in
+     offers to open the app, which then gets USB access without a prompt. -->
+<resources>
+    <usb-device vendor-id="11427" product-id="16401" /> <!-- 0x4011 Mic Mini / Mobile RX -->
+    <usb-device vendor-id="11427" product-id="16405" /> <!-- 0x4015 Mic 3 / Mic Mini 2S -->
+    <usb-device vendor-id="11427" product-id="16661" /> <!-- 0x4115 same, four-channel mode -->
+</resources>

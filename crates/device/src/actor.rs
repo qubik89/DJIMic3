@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures_lite::future;
-use nusb::transfer::RequestBuffer;
-use nusb::Interface;
+use nusb::transfer::{Bulk, Completion, In, Out};
+use nusb::{Endpoint, Interface};
 use protocol::packet::Dialect;
 use protocol::{packet, DeviceModel, DeviceStatus};
 
@@ -70,9 +70,18 @@ struct Pending {
     resp: std::sync::mpsc::Sender<Result<()>>,
 }
 
+/// Bulk-IN transfers kept queued at all times.
+const READS_IN_FLIGHT: usize = 4;
+
+/// Send one packet and wait for it to complete.
+async fn write(ep: &mut Endpoint<Bulk, Out>, pkt: Vec<u8>) -> std::result::Result<(), nusb::transfer::TransferError> {
+    ep.submit(pkt.into());
+    ep.next_complete().await.status
+}
+
 /// What the event loop woke up for.
 enum Wake {
-    Read(nusb::transfer::Completion<Vec<u8>>),
+    Read(Completion),
     Command(std::result::Result<Command, async_channel::RecvError>),
 }
 
@@ -104,8 +113,13 @@ async fn run(
     last_seen: Arc<AtomicU64>,
 ) {
     let mut model = *model_cell.lock().unwrap();
-    let ep_in = model.bulk_in();
-    let ep_out = model.bulk_out();
+    let (mut ep_in, mut ep_out) = match (
+        iface.endpoint::<Bulk, In>(model.bulk_in()),
+        iface.endpoint::<Bulk, Out>(model.bulk_out()),
+    ) {
+        (Ok(i), Ok(o)) => (i, o),
+        _ => return, // endpoints missing: not the interface we expected
+    };
     let mut seq: u16 = 1;
     let mut buf: Vec<u8> = Vec::with_capacity(1024);
     let debug = std::env::var_os("DJIMIC_DEBUG").is_some();
@@ -128,12 +142,17 @@ async fn run(
     let mut connected_once = false;
 
     loop {
-        let read = iface.bulk_in(ep_in, RequestBuffer::new(512));
+        // Keep a few reads queued so status frames are never missed while a
+        // command is being handled.
+        while ep_in.pending() < READS_IN_FLIGHT {
+            let buffer = ep_in.allocate(512);
+            ep_in.submit(buffer);
+        }
         let wake = if pending.is_some() {
-            Wake::Read(read.await)
+            Wake::Read(ep_in.next_complete().await)
         } else {
             future::or(
-                async { Wake::Read(read.await) },
+                async { Wake::Read(ep_in.next_complete().await) },
                 async { Wake::Command(cmd_rx.recv().await) },
             )
             .await
@@ -145,8 +164,8 @@ async fn run(
                     eprintln!(
                         "[read] status={:?} len={} data={}",
                         comp.status,
-                        comp.data.len(),
-                        hex(&comp.data),
+                        comp.buffer.len(),
+                        hex(&comp.buffer),
                     );
                 }
                 if comp.status.is_err() {
@@ -159,7 +178,7 @@ async fn run(
                     }
                     break;
                 }
-                buf.extend_from_slice(&comp.data);
+                buf.extend_from_slice(&comp.buffer);
                 while let Some(frame) = packet::take_frame(&mut buf) {
                     if let Some(d) = packet::heartbeat_dialect(&frame) {
                         dialect = d;
@@ -220,7 +239,7 @@ async fn run(
                     if let Some(pkt) = connect_queue.pop() {
                         let pkt_seq = u16::from_le_bytes([pkt[6], pkt[7]]);
                         let (resp, _) = std::sync::mpsc::channel();
-                        if iface.bulk_out(ep_out, pkt.clone()).await.status.is_ok() {
+                        if write(&mut ep_out, pkt.clone()).await.is_ok() {
                             pending = Some(Pending {
                                 seq: pkt_seq,
                                 packet: pkt,
@@ -243,8 +262,7 @@ async fn run(
                         } else {
                             p.attempts_left -= 1;
                             p.reads_left = ACK_WAIT_READS;
-                            let comp = iface.bulk_out(ep_out, p.packet.clone()).await;
-                            if let Err(e) = comp.status {
+                            if let Err(e) = write(&mut ep_out, p.packet.clone()).await {
                                 let p = pending.take().unwrap();
                                 let _ = p.resp.send(Err(DeviceError::Usb(format!("{e:?}"))));
                             }
@@ -257,8 +275,7 @@ async fn run(
                     Some(pkt) => {
                         let sent_seq = seq;
                         seq = seq.wrapping_add(1);
-                        let comp = iface.bulk_out(ep_out, pkt.clone()).await;
-                        match comp.status {
+                        match write(&mut ep_out, pkt.clone()).await {
                             Ok(()) => {
                                 pending = Some(Pending {
                                     seq: sent_seq,

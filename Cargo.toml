@@ -21,7 +21,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 anyhow = "1"
-nusb = "0.1"
+nusb = "0.2"
 futures-lite = "2"
 async-channel = "2"
 clap = { version = "4", features = ["derive"] }

@@ -29,6 +29,7 @@ Latest release: **[all files and notes](https://github.com/qubik89/DJIMic3/relea
 | macOS (Apple Silicon) | [DJI-Mic-Control_macOS_arm64.dmg](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_macOS_arm64.dmg) | Tested with a DJI Mic 3 |
 | Windows 10/11 (x64) | [Installer](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Windows_x64_setup.exe) · [portable .exe](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Windows_x64_portable.exe) | Built automatically, not yet tested on hardware |
 | Linux (x64) | [.deb](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_amd64.deb) · [.rpm](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_x86_64.rpm) · [AppImage](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_amd64.AppImage) | Built automatically, not yet tested on hardware |
+| Android 7+ (arm64) | APK, [built from source](#android) for now | Preview, not yet tested on hardware |
 
 Checksums are in `SHA256SUMS.txt` on each release.
 
@@ -49,6 +50,9 @@ warn because the installer isn't signed: *More info → Run anyway*.
 **Linux**: the `.deb` and `.rpm` install the USB permission rule for you; with
 the AppImage, install the rule by hand (see [Platform notes](#platform-notes)),
 `chmod +x` the file and run it.
+
+**Android**: install the APK (allow installing from unknown sources when asked),
+then plug the receiver into the phone's USB-C port. See [Android](#android).
 
 ## Features
 
@@ -145,6 +149,22 @@ Replug the receiver afterwards.
 
 <img alt="Zadig set to WinUSB for the DJI Mic Mini's HID interface" src="zadig.png" width="49%">
 
+### Android
+
+The same app runs on Android phones and tablets with USB host (OTG) support,
+which almost every phone with a USB-C port has. Plug the receiver in: Android
+asks whether to let DJI Mic Control access it — tick *Always open DJI Mic
+Control* and the app will open by itself the next time you plug it in. The app
+only uses the receiver's separate control interface, so it should keep working
+as the phone's microphone at the same time.
+
+This is useful for the **DJI Mic Series Mobile Receiver**, which is made to plug
+into a phone, and for the Mic 3 and Mini 2S receivers.
+
+It is a preview: it builds and runs, but hasn't been tested with a receiver
+plugged into a phone yet. iOS isn't possible: iPhones only let apps talk to
+USB accessories certified through Apple's MFi programme.
+
 ## Build from source
 
 Requirements: Rust 1.77+ and Node.js 18+ (Linux also needs the WebKitGTK/GTK
@@ -166,16 +186,37 @@ Always launch the GUI through `tauri dev`; a bare debug binary loads its
 frontend from the dev server and shows a blank window. Run the tests with
 `cargo test`.
 
+**Android** needs the Android SDK and NDK (Android Studio installs both), JDK
+17–21 and a rustup toolchain with the Android target:
+
+```bash
+rustup target add aarch64-linux-android
+export ANDROID_HOME="$HOME/Library/Android/sdk"   # Linux: ~/Android/Sdk
+export NDK_HOME="$ANDROID_HOME/ndk/<version>"
+cd gui
+npx tauri android build --apk --target aarch64
+```
+
+The APK ends up in
+`gui/src-tauri/gen/android/app/build/outputs/apk/universal/release/`. To sign
+it with your own key (needed for Google Play), create
+`gui/src-tauri/gen/android/keystore.properties` with `storeFile`, `keyAlias`
+and `password`; it's git-ignored. Without it the APK is signed with the local
+debug key, which is fine for installing it yourself.
+
 The release script sets path-remapping `RUSTFLAGS` so binaries don't embed the
 build machine's home directory, and checks the result.
 
 ## Project layout
 
 ```
-crates/protocol   Framing, CRC, commands, status decoding, per-model settings (Mic Mini, Mic 3)
+crates/protocol   Framing, CRC, commands, status decoding, per-model settings
 crates/device     USB transport (nusb), command ACK/retry, multi-device manager
 crates/cli        djimic command-line tool
 gui               Tauri v2 app (Rust backend in src-tauri, Svelte 5 frontend)
+gui/src-tauri/gen/android
+                  Android project; UsbPlugin.kt asks for USB access and hands
+                  the receiver to the Rust side
 packaging         Linux udev rule shipped in the .deb/.rpm
 docs/screenshots  README images
 ```

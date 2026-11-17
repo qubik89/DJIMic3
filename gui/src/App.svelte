@@ -11,7 +11,10 @@
   // Custom window chrome. macOS keeps its native traffic lights (overlay
   // title bar); Windows/Linux draw their own controls and resize handles.
   const appWindow = getCurrentWindow();
-  const isMac = /Mac/i.test(navigator.userAgent || navigator.platform || "");
+  const ua = navigator.userAgent || navigator.platform || "";
+  // Phones/tablets: no window chrome, no resize handles.
+  const isMobile = /Android|iPhone|iPad/i.test(ua);
+  const isMac = !isMobile && /Mac/i.test(ua);
   let maximized = $state(false);
   async function refreshMax() {
     try {
@@ -58,6 +61,11 @@
   }
   $effect(() => {
     document.documentElement.dataset.theme = theme;
+    if (isMobile) {
+      // Android: paint the status and navigation bars to match.
+      const color = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+      invoke("set_system_bars", { dark: theme === "dark", color }).catch(() => {});
+    }
   });
 
   // ---- Device state -----------------------------------------------------------
@@ -205,8 +213,8 @@
   const localeCode = $derived(($locale ?? "en").split("-")[0].toUpperCase());
 </script>
 
-<div class="app" class:mac={isMac}>
-  {#if !isMac}
+<div class="app" class:mac={isMac} class:mobile={isMobile}>
+  {#if !isMac && !isMobile}
     <div class="rz rz-n" onmousedown={startResize("North")}></div>
     <div class="rz rz-s" onmousedown={startResize("South")}></div>
     <div class="rz rz-e" onmousedown={startResize("East")}></div>
@@ -241,7 +249,7 @@
       </label>
     </div>
 
-    {#if !isMac}
+    {#if !isMac && !isMobile}
       <div class="win-controls">
         <button class="win-btn" onclick={minimizeWin} aria-label={$t("Minimize")}>
           <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" stroke-width="1.2" /></svg>
@@ -318,8 +326,19 @@
     /* Frameless windows (Windows/Linux) need their own edge. */
     border: 1px solid var(--line);
   }
-  .app.mac {
+  .app.mac,
+  .app.mobile {
     border: none;
+  }
+  .app.mobile .topbar {
+    padding: 0 10px 0 14px;
+  }
+  /* Phones: the brand would collide with the controls on the right. */
+  @media (max-width: 400px) {
+    .brand {
+      position: static;
+      transform: none;
+    }
   }
   .rz {
     position: fixed;

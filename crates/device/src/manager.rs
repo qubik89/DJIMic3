@@ -1,10 +1,10 @@
 //! Discovery and orchestration of all connected devices.
 
 use std::collections::HashMap;
-use std::io::ErrorKind;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
+use nusb::MaybeFuture;
 use protocol::{model_for_usb, DeviceModel, DeviceStatus, Setting, V2Target};
 use serde::Serialize;
 
@@ -110,47 +110,41 @@ impl DeviceManager {
         let mut present = 0;
         let mut permission_issue = false;
 
-        let devices = match nusb::list_devices() {
-            Ok(d) => d,
-            Err(_) => return,
-        };
-
-        for info in devices {
-            let Some(model) = model_for_usb(info.vendor_id(), info.product_id()) else {
-                continue;
+        // On Android, apps can't enumerate USB devices themselves: the app
+        // gets each receiver from the system and hands it over with
+        // `adopt_fd`, so there's nothing to scan here.
+        #[cfg(not(target_os = "android"))]
+        {
+            let devices = match nusb::list_devices().wait() {
+                Ok(d) => d,
+                Err(_) => return,
             };
-            present += 1;
-            let id = device_id(
-                info.serial_number(),
-                info.bus_number(),
-                info.device_address(),
-            );
-            if handles.contains_key(&id) {
-                continue;
-            }
 
-            let opened = info.open().and_then(|dev| {
-                for &iface in model.detach_interfaces() {
-                    let _ = dev.detach_kernel_driver(iface);
+            for info in devices {
+                let Some(model) = model_for_usb(info.vendor_id(), info.product_id()) else {
+                    continue;
+                };
+                present += 1;
+                let id = device_id(info.serial_number(), info.bus_id(), info.device_address());
+                if handles.contains_key(&id) {
+                    continue;
                 }
-                let iface = dev.detach_and_claim_interface(model.interface())?;
-                if model.alt_setting() != 0 {
-                    iface.set_alt_setting(model.alt_setting())?;
-                }
-                Ok(iface)
-            });
-
-            match opened {
-                Ok(iface) => {
-                    let actor = actor::spawn(model, iface);
-                    handles.insert(id, Handle { actor });
-                }
-                Err(e) => {
-                    if e.kind() == ErrorKind::PermissionDenied {
-                        permission_issue = true;
+                match info.open().wait().and_then(|dev| claim(model, &dev)) {
+                    Ok(iface) => {
+                        let actor = actor::spawn(model, iface);
+                        handles.insert(id, Handle { actor });
+                    }
+                    Err(e) => {
+                        if e.kind() == nusb::ErrorKind::PermissionDenied {
+                            permission_issue = true;
+                        }
                     }
                 }
             }
+        }
+        #[cfg(target_os = "android")]
+        {
+            present = handles.len();
         }
 
         *self.probe.lock().unwrap() = Probe {
@@ -159,6 +153,34 @@ impl DeviceManager {
             accessible: handles.len(),
             permission_issue,
         };
+    }
+
+    /// Take over a receiver the platform has already opened (Android hands
+    /// apps a file descriptor for a USB device once the user allows it).
+    /// Returns the device id, or the existing one if it's already tracked.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub fn adopt_fd(
+        &self,
+        fd: std::os::fd::OwnedFd,
+        vendor: u16,
+        product: u16,
+        serial: Option<&str>,
+    ) -> Result<String> {
+        let model = model_for_usb(vendor, product)
+            .ok_or_else(|| DeviceError::NotFound(format!("{vendor:04x}:{product:04x}")))?;
+        let mut handles = self.handles.lock().unwrap();
+        handles.retain(|_, h| h.actor.alive.load(Ordering::Relaxed));
+        let id = device_id(serial, "fd", 0);
+        if handles.contains_key(&id) {
+            return Ok(id);
+        }
+        let dev = nusb::Device::from_fd(fd).wait().map_err(|e| DeviceError::Usb(e.to_string()))?;
+        let iface = claim(model, &dev).map_err(|e| DeviceError::Usb(e.to_string()))?;
+        handles.insert(id.clone(), Handle { actor: actor::spawn(model, iface) });
+        let mut probe = self.probe.lock().unwrap();
+        probe.present = handles.len();
+        probe.accessible = handles.len();
+        Ok(id)
     }
 
     /// The most recent bus-scan result.
@@ -286,7 +308,23 @@ impl DeviceManager {
 }
 
 /// A stable per-session device id: the USB serial if present, else bus/address.
-fn device_id(serial: Option<&str>, bus: u8, address: u8) -> String {
+/// Claim the model's control interface (detaching a kernel driver if one
+/// holds it) and select its alternate setting.
+fn claim(model: &'static dyn DeviceModel, dev: &nusb::Device) -> std::result::Result<nusb::Interface, nusb::Error> {
+    for &iface in model.detach_interfaces() {
+        let _ = dev.detach_kernel_driver(iface);
+    }
+    let iface = match dev.claim_interface(model.interface()).wait() {
+        Ok(i) => i,
+        Err(_) => dev.detach_and_claim_interface(model.interface()).wait()?,
+    };
+    if model.alt_setting() != 0 {
+        iface.set_alt_setting(model.alt_setting()).wait()?;
+    }
+    Ok(iface)
+}
+
+fn device_id(serial: Option<&str>, bus: &str, address: u8) -> String {
     match serial {
         Some(s) if !s.is_empty() => s.to_string(),
         _ => format!("usb-{bus}-{address}"),

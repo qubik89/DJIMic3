@@ -879,13 +879,86 @@
 
   @media (max-width: 980px) {
     .cards {
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
     }
     .grid {
       grid-template-columns: minmax(0, 1fr);
     }
     .row:nth-child(2) {
       border-top: 1px solid var(--line);
+    }
+  }
+
+  /* Phones */
+  @media (max-width: 640px) {
+    .panel {
+      padding: 14px 14px 24px;
+      gap: 16px;
+    }
+    .head {
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .head > :global(.picto) {
+      width: 64px;
+      height: 30px;
+    }
+    .head :global(.name) {
+      font-size: 20px;
+    }
+    .quick {
+      margin-left: 0;
+      width: 100%;
+    }
+    .qbtn {
+      flex: 1 1 0;
+      justify-content: center;
+    }
+    .card {
+      padding: 16px;
+    }
+    .settings,
+    .tabs-row {
+      min-width: 0;
+      max-width: 100%;
+    }
+    .tabs-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+    }
+    .tabs {
+      gap: 20px;
+      min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .bottom-row.tight {
+      flex-wrap: wrap;
+    }
+    .bottom-row.tight .field.grow {
+      flex-basis: 100%;
+    }
+    .scenes {
+      flex-wrap: wrap;
+      order: -1;
+      padding-bottom: 0;
+    }
+    .tab-panel {
+      padding: 0 16px;
+    }
+    .nc-row {
+      flex-wrap: wrap;
+      gap: 12px 16px;
+    }
+    .nc-row .text {
+      flex-basis: 100%;
+    }
+    .nc-row .vdivider {
+      display: none;
+    }
+    .nc-row .ctl {
+      margin-left: auto;
     }
   }
 </style>
