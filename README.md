@@ -42,6 +42,13 @@ Checksums are in `SHA256SUMS.txt` on each release.
 1. Open the `.dmg` and drag **DJI Mic Control** to **Applications**.
 2. Connect the receiver with a USB-C cable and open the app.
 
+Or with [Homebrew](https://github.com/qubik89/homebrew-tap):
+
+```bash
+brew install --cask qubik89/tap/mic-control
+brew upgrade --cask mic-control   # later, to update
+```
+
 Since 1.4.0 the app is signed with a Developer ID and notarized by Apple, so
 it opens normally. Versions up to 1.3.0 weren't signed: if macOS says one of
 those is "damaged", clear the quarantine flag once with

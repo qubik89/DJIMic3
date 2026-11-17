@@ -142,3 +142,49 @@ jobs:
             printf '\n---\n\nNew here? Setup guide: https://miccontrol.app/en/dji-mic-3-mac/ · Troubleshooting: https://miccontrol.app/en/dji-mic-3-not-recognized-mac/\n' >> "$notes"
             gh release create "$TAG" * --title "DJI Mic Control ${TAG#v}" --notes-file "$notes"
           fi
+
+  # Points the Homebrew cask (qubik89/homebrew-tap) at the .dmg just published.
+  # Needs a HOMEBREW_TAP_TOKEN secret: a fine-grained token with "Contents:
+  # read and write" on qubik89/homebrew-tap only. Without it, this job skips.
+  homebrew:
+    name: Update Homebrew cask
+    needs: publish
+    runs-on: ubuntu-latest
+    env:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - name: Check for the token
+        id: token
+        run: |
+          if [ -n "$HOMEBREW_TAP_TOKEN" ]; then echo "set=1" >> "$GITHUB_OUTPUT"
+          else echo "No HOMEBREW_TAP_TOKEN secret: the cask is not updated."; fi
+
+      - if: steps.token.outputs.set == '1'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - if: steps.token.outputs.set == '1'
+        uses: actions/checkout@v4
+        with:
+          repository: qubik89/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - if: steps.token.outputs.set == '1'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*macos"   # the build job's macOS artifact
+          merge-multiple: true
+          path: dist
+
+      - name: Update the cask and push it
+        if: steps.token.outputs.set == '1'
+        run: |
+          ./build-release.sh --update-cask dist/DJI-Mic-Control_macOS_arm64.dmg homebrew-tap
+          cd homebrew-tap
+          if git diff --quiet; then echo "The cask is already up to date."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "mic-control ${TAG#v}"
+          git push

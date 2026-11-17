@@ -21,9 +21,54 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
+
+# --- Homebrew cask -----------------------------------------------------------
+# The cask in qubik89/homebrew-tap (Casks/mic-control.rb) downloads the
+# release's .dmg and checks it against a sha256, so each release needs a new
+# version and checksum there. update_cask writes both; it doesn't commit or
+# push. Two ways to run it:
+#
+#   ./build-release.sh --update-cask <dmg> <homebrew-tap checkout>
+#       Only updates the cask (no build). The release workflow does this after
+#       publishing, with the .dmg it uploaded.
+#   HOMEBREW_TAP_DIR=<homebrew-tap checkout> ./build-release.sh
+#       Updates the cask after a macOS build. Only useful if that .dmg is the
+#       one you upload: a rebuilt .dmg has a different checksum.
+app_version() {
+  sed -nE 's/^  "version": "([^"]+)",?$/\1/p' "$SCRIPT_DIR/gui/src-tauri/tauri.conf.json" | head -1
+}
+update_cask() { # <dmg> <tap dir>
+  local dmg="$1" cask="$2/Casks/mic-control.rb" version sha tmp
+  [ -f "$dmg" ]  || die "no such .dmg: $dmg"
+  [ -f "$cask" ] || die "no cask at $cask"
+  version="$(app_version)"
+  [ -n "$version" ] || die "could not read the version from gui/src-tauri/tauri.conf.json"
+  if command -v shasum >/dev/null 2>&1; then
+    sha="$(shasum -a 256 "$dmg" | cut -d' ' -f1)"
+  else
+    sha="$(sha256sum "$dmg" | cut -d' ' -f1)"
+  fi
+  tmp="$(mktemp)"
+  sed -E -e "s/^(  version \")[^\"]*(\")$/\1${version}\2/" \
+         -e "s/^(  sha256 \")[0-9a-f]{64}(\")$/\1${sha}\2/" "$cask" >"$tmp"
+  if ! grep -qxF "  version \"$version\"" "$tmp" || ! grep -qxF "  sha256 \"$sha\"" "$tmp"; then
+    rm -f "$tmp"
+    die "could not find the version and sha256 lines in $cask"
+  fi
+  cat "$tmp" >"$cask"
+  rm -f "$tmp"
+  echo "==> Homebrew cask: mic-control $version, sha256 $sha"
+}
+
+if [ "${1:-}" = "--update-cask" ]; then
+  [ "$#" -eq 3 ] || die "usage: $0 --update-cask <dmg> <homebrew-tap checkout>"
+  update_cask "$2" "$3"
+  exit 0
+fi
+
+cd "$SCRIPT_DIR"
 
 # --- Path-privacy safety -----------------------------------------------------
 # Strip the home dir and Cargo registry from embedded paths. We use
@@ -339,6 +384,10 @@ else
       exit 1
     fi
   fi
+fi
+
+if [ "$PLATFORM" = "macos" ] && [ -n "${HOMEBREW_TAP_DIR:-}" ]; then
+  update_cask "$DMG" "$HOMEBREW_TAP_DIR"
 fi
 
 echo "==> Done. Artifacts in Release/$PLATFORM:"
