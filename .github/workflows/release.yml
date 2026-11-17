@@ -128,7 +128,12 @@ jobs:
           cd dist
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "DJI Mic Control ${TAG#v}" --generate-notes
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" * --clobber
+          else
+            # Given the files, gh creates the release as a draft, uploads them
+            # and only then publishes it, so it never becomes "latest" without
+            # them: releases/latest/download/<name> (which miccontrol.app
+            # redirects to) keeps serving the previous version until then.
+            gh release create "$TAG" * --title "DJI Mic Control ${TAG#v}" --generate-notes
           fi
-          gh release upload "$TAG" * --clobber
