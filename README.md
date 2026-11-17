@@ -22,8 +22,17 @@ that adds **DJI Mic 3** support, a redesigned interface and six languages.
 
 ## Download
 
-**[⬇ DJI Mic Control 1.2.0 for macOS (Apple Silicon)](https://github.com/qubik89/DJIMic3/releases/download/v1.2.0/DJI-Mic-Control_1.2.0_macOS_arm64.dmg)**
-· [all releases](https://github.com/qubik89/DJIMic3/releases)
+Latest release: **[all files and notes](https://github.com/qubik89/DJIMic3/releases/latest)**
+
+| Platform | Download | Status |
+| --- | --- | --- |
+| macOS (Apple Silicon) | [DJI-Mic-Control_macOS_arm64.dmg](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_macOS_arm64.dmg) | Tested with a DJI Mic 3 |
+| Windows 10/11 (x64) | [Installer](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Windows_x64_setup.exe) · [portable .exe](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Windows_x64_portable.exe) | Built automatically, not yet tested on hardware |
+| Linux (x64) | [.deb](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_amd64.deb) · [.rpm](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_x86_64.rpm) · [AppImage](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_amd64.AppImage) | Built automatically, not yet tested on hardware |
+
+Checksums are in `SHA256SUMS.txt` on each release.
+
+**macOS**
 
 1. Open the `.dmg` and drag **DJI Mic Control** to **Applications**.
 2. The app isn't signed with an Apple developer account, so macOS may say it
@@ -33,7 +42,13 @@ that adds **DJI Mic 3** support, a redesigned interface and six languages.
    ```
 3. Connect the receiver with a USB-C cable and open the app.
 
-Windows and Linux builds aren't published yet; [build them from source](#build-from-source).
+**Windows**: install, then switch the receiver's control interface to WinUSB
+with Zadig (see [Platform notes](#platform-notes)). Windows SmartScreen may
+warn because the installer isn't signed: *More info → Run anyway*.
+
+**Linux**: the `.deb` and `.rpm` install the USB permission rule for you; with
+the AppImage, install the rule by hand (see [Platform notes](#platform-notes)),
+`chmod +x` the file and run it.
 
 ## Features
 

@@ -640,3 +640,23 @@ Safety Track does not exist on the Mic 3 (DJI dropped it; the manual lists
 only Mono, Stereo and Quadraphonic). `0x0021` is rejected; channel-mode
 values `0x03` and `0x06` are ACKed but change nothing (`0x03` makes the
 receiver re-enumerate and come back in mono).
+
+### Identifying the receiver
+
+Two read-only requests (documented for the Mobile RX by
+[piedol/lavdeck](https://github.com/piedol/lavdeck)) also work on the Mic 3:
+
+- **Get version**, command set `0x00`, id `0x01`, empty payload. The Mic 3
+  receiver answers with the hardware name **`DM303_RX`** (ASCII, NUL-padded)
+  followed by its firmware version (reversed bytes, `0a 00 01 03` →
+  `03.01.00.10`). The Mobile RX reports `DJI MIC MINI RX`. This is the
+  reliable way to tell receivers apart: the Mic 3 and the Mic Mini 2S
+  receivers share USB ids `2ca3:4015`/`4115`, and the Mic Mini and Mobile
+  receivers share `2ca3:4011`.
+- **Get capability**, command set `0x5B`, id `0x12`, payload
+  `index (u32 LE) | capability id (u16 LE, 0 = all)`. On the Mic 3 it only
+  returns three one-byte flags per unit (ids `0x0e`, `0x0f`, `0x10`; receiver
+  `0/1/0`, each transmitter `1/1/1`), not a usable feature list.
+
+The Mic 3 receiver never sends a product-name record (`0x06`) for itself; its
+transmitters don't either, so they show as "TX1"/"TX2".

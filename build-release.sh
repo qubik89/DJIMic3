@@ -106,6 +106,9 @@ fi
 if [ "${#SCAN_FILES[@]}" -gt 0 ] && command -v strings >/dev/null 2>&1; then
   HOST="$(hostname -s 2>/dev/null || hostname 2>/dev/null || true)"
   USER_NAME="$(id -un 2>/dev/null || whoami 2>/dev/null || true)"
+  # On CI the account is a generic word ("runner") that shows up by chance in
+  # bundled system libraries; the home-path checks above still apply there.
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then HOST=""; USER_NAME=""; fi
   LEAK_REPORT=""
   for f in "${SCAN_FILES[@]}"; do
     # Grep only the file's own string content (not `strings -f`'s filename
