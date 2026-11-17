@@ -1,5 +1,9 @@
 # DJI Mic Control
 
+**Website:** [miccontrol.app](https://miccontrol.app/en/) — download, setup guides for
+[Mac](https://miccontrol.app/en/dji-mic-3-mac/), [Windows](https://miccontrol.app/en/dji-mic-3-windows/)
+and [Linux](https://miccontrol.app/en/dji-mic-3-linux/), and FAQ in 6 languages.
+
 Control your DJI wireless microphones from the computer over USB — no phone,
 no DJI Mimo app. Plug the receiver in and every setting, live levels, mute,
 internal recording and battery status are right there.
