@@ -16,6 +16,9 @@ gui/src-tauri/target/
 .env
 .env.*
 !.env.example
+# Apple signing certificates and App Store Connect API keys
+*.p12
+*.p8
 
 # Logs
 *.log

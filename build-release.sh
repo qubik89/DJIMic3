@@ -13,11 +13,17 @@
 # so a crash can never leak the build machine's home directory, username, or
 # hostname. The build then re-scans the compiled binary and FAILS if anything
 # slipped through.
+#
+# On macOS the build can also be signed with a Developer ID certificate and
+# notarized by Apple (see "macOS signing & notarization" below and
+# docs/macos-signing.md); without those credentials it stays unsigned.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
 
 # --- Path-privacy safety -----------------------------------------------------
 # Strip the home dir and Cargo registry from embedded paths. We use
@@ -48,6 +54,89 @@ esac
 
 command -v cargo >/dev/null 2>&1 || { echo "ERROR: cargo not found in PATH." >&2; exit 1; }
 command -v npm   >/dev/null 2>&1 || { echo "ERROR: npm not found in PATH." >&2; exit 1; }
+
+# --- macOS signing & notarization (optional) ---------------------------------
+# Without credentials the build stays unsigned, as before. For a build that
+# Gatekeeper opens on any Mac without warnings, set
+#
+#   APPLE_SIGNING_IDENTITY   "Developer ID Application: Name (TEAMID)", or that
+#                            certificate's SHA-1 from
+#                            `security find-identity -v -p codesigning`
+#
+# plus ONE set of notarization credentials:
+#
+#   APPLE_API_KEY, APPLE_API_ISSUER, APPLE_API_KEY_PATH
+#       App Store Connect API key: key ID, issuer ID, path to AuthKey_*.p8
+#   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+#       Apple ID with an app-specific password
+#
+# Where the certificate isn't in the login keychain (CI), also set
+# APPLE_CERTIFICATE (base64 .p12) and APPLE_CERTIFICATE_PASSWORD; Tauri imports
+# it into a temporary keychain.
+#
+# Tauri signs with the hardened runtime and notarizes + staples the .app; this
+# script then notarizes + staples the .dmg and checks both with Gatekeeper.
+# NOTARIZE=0 signs without notarizing. That is for local testing only:
+# Gatekeeper still blocks such a build on other Macs.
+SIGN=0
+SIGN_NAME=""
+NOTARY_ARGS=()
+NOTARY_ENV="APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID"
+
+if [ "$PLATFORM" = "macos" ]; then
+  # CI passes secrets that aren't configured as empty strings: treat as unset.
+  for v in APPLE_SIGNING_IDENTITY APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD $NOTARY_ENV; do
+    [ -n "${!v:-}" ] || unset "$v"
+  done
+
+  if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+    # Nothing to notarize without a signature; keep Tauri from trying.
+    for v in $NOTARY_ENV; do unset "$v"; done
+    echo "==> macOS: unsigned build (set APPLE_SIGNING_IDENTITY to sign; see docs/macos-signing.md)"
+  else
+    SIGN=1
+
+    if [ -n "${APPLE_CERTIFICATE:-}" ]; then
+      SIGN_NAME="$APPLE_SIGNING_IDENTITY"   # Tauri imports it during the build
+    else
+      matches="$(security find-identity -v -p codesigning | grep -F -- "$APPLE_SIGNING_IDENTITY" || true)"
+      count="$(printf '%s' "$matches" | grep -c . || true)"
+      [ "$count" -ne 0 ] || die "no valid signing identity matching \"$APPLE_SIGNING_IDENTITY\" in the keychain.
+       List them with: security find-identity -v -p codesigning"
+      [ "$count" -eq 1 ] || die "\"$APPLE_SIGNING_IDENTITY\" matches $count identities; set APPLE_SIGNING_IDENTITY to the SHA-1 of the one to use:
+$matches"
+      SIGN_NAME="$(printf '%s\n' "$matches" | sed -E 's/^[^"]*"(.*)"[^"]*$/\1/')"
+    fi
+
+    require() { for v in "$@"; do [ -n "${!v:-}" ] || die "$v is not set (needed with $*)"; done; }
+    if [ "${NOTARIZE:-1}" = "0" ]; then
+      for v in $NOTARY_ENV; do unset "$v"; done
+      echo "WARN: NOTARIZE=0: signed but NOT notarized; Gatekeeper will block this build on other Macs." >&2
+    elif [ -n "${APPLE_API_KEY:-}${APPLE_API_ISSUER:-}${APPLE_API_KEY_PATH:-}" ]; then
+      require APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH
+      [ -f "$APPLE_API_KEY_PATH" ] || die "APPLE_API_KEY_PATH: no such file: $APPLE_API_KEY_PATH"
+      unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID   # one method at a time
+      NOTARY_ARGS=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
+    elif [ -n "${APPLE_ID:-}${APPLE_PASSWORD:-}${APPLE_TEAM_ID:-}" ]; then
+      require APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+      NOTARY_ARGS=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
+    else
+      die "APPLE_SIGNING_IDENTITY is set but there are no notarization credentials.
+       Set APPLE_API_KEY + APPLE_API_ISSUER + APPLE_API_KEY_PATH (or APPLE_ID +
+       APPLE_PASSWORD + APPLE_TEAM_ID), or NOTARIZE=0 for a local test build."
+    fi
+
+    if [ "${#NOTARY_ARGS[@]}" -gt 0 ]; then
+      case "$SIGN_NAME" in
+        "Developer ID Application:"*) ;;
+        *) die "notarization needs a \"Developer ID Application\" certificate, not \"$SIGN_NAME\"." ;;
+      esac
+      echo "==> macOS: signing as \"$SIGN_NAME\" and notarizing"
+    else
+      echo "==> macOS: signing as \"$SIGN_NAME\" (no notarization)"
+    fi
+  fi
+fi
 
 OUT="$SCRIPT_DIR/Release/$PLATFORM"
 BUNDLE_DIR="$SCRIPT_DIR/target/release/bundle"
@@ -83,10 +172,41 @@ copy_glob() { # <dir> <glob>
 if [ "$PLATFORM" = "macos" ]; then
   copy_glob "$BUNDLE_DIR/macos" "*.app"
   copy_glob "$BUNDLE_DIR/dmg"   "*.dmg"
+  APP="$(ls -d "$OUT"/*.app | head -1)"
+  DMG="$(ls "$OUT"/*.dmg | head -1)"
 else
   copy_glob "$BUNDLE_DIR/deb"      "*.deb"
   copy_glob "$BUNDLE_DIR/rpm"      "*.rpm"
   copy_glob "$BUNDLE_DIR/appimage" "*.AppImage"
+fi
+
+# --- macOS: sign, notarize and staple the .dmg -------------------------------
+# Tauri has already signed (and, with credentials, notarized + stapled) the
+# .app inside it. Notarizing the .dmg as well lets Gatekeeper clear the
+# download itself, even offline.
+if [ "$SIGN" = 1 ]; then
+  if ! codesign --verify "$DMG" 2>/dev/null; then
+    echo "==> Signing $(basename "$DMG")"
+    codesign --sign "$APPLE_SIGNING_IDENTITY" --timestamp "$DMG"
+  fi
+  if [ "${#NOTARY_ARGS[@]}" -gt 0 ]; then
+    echo "==> Notarizing $(basename "$DMG") (usually takes a few minutes)"
+    NOTARY_OUT="$(mktemp)"
+    xcrun notarytool submit "$DMG" "${NOTARY_ARGS[@]}" --wait --timeout 1h \
+      --output-format json >"$NOTARY_OUT" || true
+    NOTARY_STATUS="$(plutil -extract status raw -o - "$NOTARY_OUT" 2>/dev/null || echo unknown)"
+    if [ "$NOTARY_STATUS" != "Accepted" ]; then
+      cat "$NOTARY_OUT" >&2
+      NOTARY_ID="$(plutil -extract id raw -o - "$NOTARY_OUT" 2>/dev/null || true)"
+      if [ -n "$NOTARY_ID" ]; then
+        xcrun notarytool log "$NOTARY_ID" "${NOTARY_ARGS[@]}" >&2 || true
+      fi
+      rm -f "$NOTARY_OUT"
+      die "Apple did not accept the .dmg for notarization (status: $NOTARY_STATUS)."
+    fi
+    rm -f "$NOTARY_OUT"
+    xcrun stapler staple "$DMG"
+  fi
 fi
 
 # --- Verify no build-machine paths leaked into any shipped file --------------
@@ -135,12 +255,36 @@ fi
 UDEV_RULE="60-dji-mic.rules"
 
 if [ "$PLATFORM" = "macos" ]; then
-  APP="$(ls -d "$OUT"/*.app 2>/dev/null | head -1)"
   if [ -n "$APP" ] && [ -f "$APP/Contents/Resources/icon.icns" ]; then
     echo "==> Logo present: $(basename "$APP")/Contents/Resources/icon.icns"
   else
     echo "ERROR: app logo (Contents/Resources/icon.icns) missing from the .app" >&2
     exit 1
+  fi
+
+  # --- Verify the signature, hardened runtime and notarization ---------------
+  if [ "$SIGN" = 1 ]; then
+    codesign --verify --deep --strict "$APP" || die "the .app signature does not verify."
+    SIG_INFO="$(codesign -dv --verbose=4 "$APP" 2>&1)"
+    printf '%s\n' "$SIG_INFO" | grep -q '^CodeDirectory .*flags=.*runtime' \
+      || die "the .app is signed without the hardened runtime."
+    case "$SIGN_NAME" in
+      *" "*) printf '%s\n' "$SIG_INFO" | grep -qxF "Authority=$SIGN_NAME" \
+               || die "the .app is not signed by \"$SIGN_NAME\"." ;;
+    esac
+    codesign --verify "$DMG" || die "the .dmg signature does not verify."
+    echo "==> Signed with the hardened runtime: $(basename "$APP"), $(basename "$DMG")"
+
+    if [ "${#NOTARY_ARGS[@]}" -gt 0 ]; then
+      xcrun stapler validate "$APP" >/dev/null || die "no notarization ticket stapled to the .app."
+      xcrun stapler validate "$DMG" >/dev/null || die "no notarization ticket stapled to the .dmg."
+      spctl --assess --type execute -vv "$APP" 2>&1 | grep -q "source=Notarized Developer ID" \
+        || die "Gatekeeper does not accept the .app as notarized."
+      spctl --assess --type open --context context:primary-signature -vv "$DMG" 2>&1 \
+        | grep -q "source=Notarized Developer ID" \
+        || die "Gatekeeper does not accept the .dmg as notarized."
+      echo "==> Notarized and stapled; Gatekeeper accepts both."
+    fi
   fi
 else
   # List a package's payload paths, using whatever tooling the host has.

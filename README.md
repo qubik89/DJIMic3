@@ -179,6 +179,10 @@ development packages Tauri requires).
 ./build-release.ps1           # Windows
 ```
 
+On macOS, `build-release.sh` can also sign the app with a Developer ID
+certificate and notarize it with Apple: see
+[docs/macos-signing.md](docs/macos-signing.md).
+
 For development, from `gui/`:
 
 ```bash
