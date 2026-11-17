@@ -4,7 +4,11 @@ use std::sync::Arc;
 
 use device::{DeviceManager, DeviceStatus, DeviceSummary, Os, Probe, Setting};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_opener::OpenerExt;
+
+/// Ko-fi page for tips. Fixed here so the webview can't open arbitrary URLs.
+pub const SUPPORT_URL: &str = "https://ko-fi.com/qubik";
 
 /// Everything the UI needs for one render, fetched in a single call.
 #[derive(Serialize)]
@@ -86,4 +90,21 @@ pub fn udev_help() -> UdevHelp {
         rule: device::udev_rule(),
         steps: device::udev_instructions(),
     }
+}
+
+/// Open the Ko-fi page in the default browser. On success the webview hears
+/// `support-opened` and stops showing its reminder, whichever button or menu
+/// item opened the page.
+pub fn open_support_page(app: &AppHandle) -> Result<(), String> {
+    app.opener()
+        .open_url(SUPPORT_URL, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit("support-opened", ());
+    Ok(())
+}
+
+/// The webview's "Buy me a coffee" buttons.
+#[tauri::command]
+pub fn open_support(app: AppHandle) -> Result<(), String> {
+    open_support_page(&app)
 }

@@ -31,6 +31,12 @@ const es = {
   Maximize: "Maximizar",
   Close: "Cerrar",
   Language: "Idioma",
+  // Ko-fi reminder
+  "Buy me a coffee": "Invítame a un café",
+  "This app is free and will stay free. If it saves you a take, you can buy me a coffee.":
+    "Esta app es gratis y lo seguirá siendo. Si te salva una toma, puedes invitarme a un café.",
+  Later: "Más tarde",
+  "Don't show again": "No volver a mostrar",
   "A microphone is connected but not accessible — click to fix USB permissions.":
     "Hay un micrófono conectado, pero no se puede acceder a él: haz clic para corregir los permisos USB.",
   "Permission needed": "Se necesitan permisos",
@@ -146,6 +152,12 @@ const fr = {
   Maximize: "Agrandir",
   Close: "Fermer",
   Language: "Langue",
+  // Ko-fi reminder
+  "Buy me a coffee": "Offrez-moi un café",
+  "This app is free and will stay free. If it saves you a take, you can buy me a coffee.":
+    "Cette app est gratuite et le restera. Si elle vous sauve une prise, vous pouvez m'offrir un café.",
+  Later: "Plus tard",
+  "Don't show again": "Ne plus afficher",
   "A microphone is connected but not accessible — click to fix USB permissions.":
     "Un micro est connecté mais inaccessible — cliquez pour corriger les autorisations USB.",
   "Permission needed": "Autorisation requise",
@@ -254,6 +266,12 @@ const it = {
   Maximize: "Ingrandisci",
   Close: "Chiudi",
   Language: "Lingua",
+  // Ko-fi reminder
+  "Buy me a coffee": "Offrimi un caffè",
+  "This app is free and will stay free. If it saves you a take, you can buy me a coffee.":
+    "Questa app è gratis e lo resterà. Se ti salva una ripresa, puoi offrirmi un caffè.",
+  Later: "Più tardi",
+  "Don't show again": "Non mostrare più",
   "A microphone is connected but not accessible — click to fix USB permissions.":
     "Un microfono è collegato ma non accessibile — fai clic per correggere i permessi USB.",
   "Permission needed": "Autorizzazione necessaria",
@@ -362,6 +380,12 @@ const de = {
   Maximize: "Maximieren",
   Close: "Schließen",
   Language: "Sprache",
+  // Ko-fi reminder
+  "Buy me a coffee": "Spendier mir einen Kaffee",
+  "This app is free and will stay free. If it saves you a take, you can buy me a coffee.":
+    "Diese App ist kostenlos und bleibt es. Wenn sie dir einen Take rettet, kannst du mir einen Kaffee spendieren.",
+  Later: "Später",
+  "Don't show again": "Nicht mehr anzeigen",
   "A microphone is connected but not accessible — click to fix USB permissions.":
     "Ein Mikrofon ist verbunden, aber nicht zugänglich – klicke hier, um die USB-Berechtigungen zu korrigieren.",
   "Permission needed": "Berechtigung erforderlich",
@@ -470,6 +494,12 @@ const nl = {
   Maximize: "Maximaliseren",
   Close: "Sluiten",
   Language: "Taal",
+  // Ko-fi reminder
+  "Buy me a coffee": "Trakteer me op een koffie",
+  "This app is free and will stay free. If it saves you a take, you can buy me a coffee.":
+    "Deze app is gratis en blijft gratis. Bespaart hij je een take, dan kun je me op een koffie trakteren.",
+  Later: "Later",
+  "Don't show again": "Niet meer tonen",
   "A microphone is connected but not accessible — click to fix USB permissions.":
     "Er is een microfoon aangesloten, maar die is niet toegankelijk — klik om de USB-rechten te herstellen.",
   "Permission needed": "Toestemming nodig",

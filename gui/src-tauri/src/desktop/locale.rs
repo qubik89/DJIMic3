@@ -17,6 +17,7 @@ const TRAY: &[(&str, [&str; 5])] = &[
     ("Open DJI Mic Control", ["Abrir DJI Mic Control", "Ouvrir DJI Mic Control", "Apri DJI Mic Control", "DJI Mic Control öffnen", "DJI Mic Control openen"]),
     ("Start at login (hidden)", ["Abrir al iniciar sesión (oculta)", "Lancer à l'ouverture de session (masqué)", "Avvia al login (nascosta)", "Bei Anmeldung starten (ausgeblendet)", "Starten bij inloggen (verborgen)"]),
     ("Quit", ["Salir", "Quitter", "Esci", "Beenden", "Stoppen"]),
+    ("Buy Me a Coffee…", ["Invítame a un café…", "Offrez-moi un café…", "Offrimi un caffè…", "Spendier mir einen Kaffee…", "Trakteer me op een koffie…"]),
     ("Mic LEDs: On  →  Off", ["LED: activados  →  desactivados", "LED : activées  →  désactivées", "LED: accesi  →  spenti", "Mikrofon-LEDs: Ein  →  Aus", "Microfoon-leds: aan  →  uit"]),
     ("Mic LEDs: Off  →  On", ["LED: desactivados  →  activados", "LED : désactivées  →  activées", "LED: spenti  →  accesi", "Mikrofon-LEDs: Aus  →  Ein", "Microfoon-leds: uit  →  aan"]),
     ("Toggle Mic LEDs", ["Activar/desactivar LED", "Activer/désactiver les LED", "Attiva/disattiva LED", "Mikrofon-LEDs umschalten", "Microfoon-leds schakelen"]),
@@ -62,11 +63,12 @@ pub fn set_locale(app: AppHandle, locale: String) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-/// The default macOS app menu with its labels translated. Roles, shortcuts,
-/// Services and About metadata are preserved since only the text changes.
+/// The default macOS app menu with its labels translated, plus "Buy Me a
+/// Coffee…" under About. Roles, shortcuts, Services and About metadata are
+/// preserved since only the text changes.
 #[cfg(target_os = "macos")]
 fn macos_menu(app: &AppHandle, i: usize) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    use tauri::menu::{Menu, MenuItemKind};
+    use tauri::menu::{Menu, MenuItem, MenuItemKind};
 
     /// English → [es-ES, fr, it, de, nl].
     const LABELS: &[(&str, [&str; 5])] = &[
@@ -128,6 +130,12 @@ fn macos_menu(app: &AppHandle, i: usize) -> tauri::Result<tauri::menu::Menu<taur
     let menu = Menu::default(app)?;
     if i != 0 {
         translate(menu.items()?, &label)?;
+    }
+    // The first submenu is the one named after the app; About is its first item.
+    // Clicks land in the tray's menu handler, which receives every menu event.
+    if let Some(MenuItemKind::Submenu(app_menu)) = menu.items()?.into_iter().next() {
+        let support = MenuItem::with_id(app, "support", tr(app, "Buy Me a Coffee…"), true, None::<&str>)?;
+        app_menu.insert(&support, 1)?;
     }
     Ok(menu)
 }

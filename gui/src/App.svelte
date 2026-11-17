@@ -1,12 +1,15 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { t, locale, selectLocale } from "./lib/i18n.js";
   import { LOCALES } from "./lib/translations.js";
   import DevicePanel from "./lib/DevicePanel.svelte";
   import UdevModal from "./lib/UdevModal.svelte";
+  import SupportCard from "./lib/SupportCard.svelte";
   import Toast from "./lib/ui/Toast.svelte";
   import { snapshot, setSetting, setTxSetting, udevHelp } from "./lib/api.js";
+  import * as support from "./lib/support.js";
 
   // Custom window chrome. macOS keeps its native traffic lights (overlay
   // title bar); Windows/Linux draw their own controls and resize handles.
@@ -205,6 +208,76 @@
     return () => window.removeEventListener("resize", onResize);
   });
 
+  // ---- Ko-fi reminder (rules in support.js) --------------------------------
+  let supportState = $state.raw(support.load());
+  // While the card is on screen: what to restore if a recording starts, so
+  // that showing it doesn't count.
+  let supportCard = $state.raw(null);
+  const anyRecording = $derived((status?.tx ?? []).some((tx) => tx?.settings?.record === "on"));
+  function updateSupport(next) {
+    supportState = next;
+    support.save(next);
+  }
+  function openSupport() {
+    support.openSupport().catch((e) => showToast(String(e), "error"));
+  }
+  function supportLater() {
+    supportCard = null; // already held back by markShown
+  }
+  function supportNever() {
+    updateSupport(support.stop(supportState));
+    supportCard = null;
+  }
+
+  // Bring the card up once the window has been in front for a little while
+  // with a receiver and a transmitter linked: the user has seen it work.
+  $effect(() => {
+    let readySince = 0;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      if (!support.working(status) || !document.hasFocus()) {
+        readySince = 0;
+        return;
+      }
+      readySince ||= now;
+      if (
+        !supportCard &&
+        !anyRecording &&
+        !linuxAccessIssue &&
+        now - readySince >= support.DELAY_MS &&
+        support.shouldShow(supportState, now)
+      ) {
+        supportCard = { shown: supportState.shown, snoozeUntil: supportState.snoozeUntil };
+        updateSupport(support.markShown(supportState, now));
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  });
+
+  // Never in the way of a take: hide it and give the show back.
+  $effect(() => {
+    if (anyRecording && supportCard) {
+      updateSupport({ ...supportState, ...supportCard });
+      supportCard = null;
+    }
+  });
+
+  // Whichever button or menu item opened Ko-fi, stop asking.
+  $effect(() => {
+    let unlisten;
+    let gone = false;
+    listen("support-opened", () => {
+      updateSupport(support.stop(supportState));
+      supportCard = null;
+    })
+      .then((fn) => (gone ? fn() : (unlisten = fn)))
+      .catch(() => {});
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  });
+
   // Keep <html lang> and the native tray/app menus in the chosen language.
   $effect(() => {
     document.documentElement.lang = $locale;
@@ -229,6 +302,16 @@
     <span class="brand" data-tauri-drag-region>DJI Mic Control</span>
     <div class="drag-fill" data-tauri-drag-region></div>
     <div class="top-actions">
+      <button class="icon-btn support-btn" onclick={openSupport} aria-label={$t("Buy me a coffee")} title={$t("Buy me a coffee")}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M12 20s-7.5-4.6-7.5-10.1A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
       <button class="icon-btn" onclick={toggleTheme} aria-label={$t("Toggle theme")} title={$t("Toggle theme")}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6" />
@@ -308,6 +391,10 @@
       </div>
     {/if}
   </main>
+
+  {#if supportCard}
+    <SupportCard onopen={openSupport} onlater={supportLater} onnever={supportNever} />
+  {/if}
 
   <Toast {toast} />
 </div>
@@ -447,6 +534,9 @@
   .icon-btn:hover {
     background: var(--raise);
     color: var(--text);
+  }
+  .support-btn:hover {
+    color: var(--rec);
   }
   .topbar svg {
     display: block;

@@ -130,6 +130,7 @@ fn build_menu(app: &AppHandle, state: &MenuState) -> tauri::Result<Menu<Wry>> {
         *autostart,
         None::<&str>,
     )?;
+    let support = MenuItem::with_id(app, "support", locale::tr(app, "Buy Me a Coffee…"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", locale::tr(app, "Quit"), true, None::<&str>)?;
     let sep_a = PredefinedMenuItem::separator(app)?;
     let sep_b = PredefinedMenuItem::separator(app)?;
@@ -166,10 +167,10 @@ fn build_menu(app: &AppHandle, state: &MenuState) -> tauri::Result<Menu<Wry>> {
         if let Some(item) = &nc_power_item {
             items.push(item);
         }
-        items.extend([&sep_b as &dyn IsMenuItem<Wry>, &startup, &sep_c, &quit]);
+        items.extend([&sep_b as &dyn IsMenuItem<Wry>, &support, &startup, &sep_c, &quit]);
         Menu::with_items(app, &items)
     } else {
-        Menu::with_items(app, &[&open, &sep_a, &startup, &sep_b, &quit])
+        Menu::with_items(app, &[&open, &sep_a, &support, &startup, &sep_b, &quit])
     }
 }
 
@@ -479,6 +480,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
         ))
+        .plugin(tauri_plugin_opener::init())
         .manage(locale::LocaleState::default())
         .manage(manager)
         .setup(move |app| {
@@ -523,6 +525,13 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open" => show_main(app),
+                    // Also reached from the macOS app menu: this handler gets every
+                    // menu event, so "support" is handled here only.
+                    "support" => {
+                        if let Err(e) = commands::open_support_page(app) {
+                            eprintln!("djimic: could not open the support page: {e}");
+                        }
+                    }
                     "toggle-leds" => {
                         let mgr = app.state::<Arc<DeviceManager>>().inner().clone();
                         std::thread::spawn(move || toggle_between(&mgr, "mic-leds", "on", "off"));
@@ -634,6 +643,7 @@ pub fn run() {
             commands::set_setting,
             commands::set_tx_setting,
             commands::udev_help,
+            commands::open_support,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DJI Mic Control");

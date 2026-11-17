@@ -115,6 +115,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(usb_plugin())
         .plugin(system_bars_plugin())
+        .plugin(tauri_plugin_opener::init())
         .manage(manager)
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -141,6 +142,7 @@ pub fn run() {
             commands::set_setting,
             commands::set_tx_setting,
             commands::udev_help,
+            commands::open_support,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DJI Mic Control");
