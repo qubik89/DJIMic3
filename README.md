@@ -1,175 +1,171 @@
 # DJI Mic Control
 
-<img alt="DJI Mic Control GUI screenshot (light)" src="light.png" width="49%">
-<img alt="DJI Mic Control GUI screenshot (dark)" src="dark.png" width="49%">
+Control your DJI wireless microphones from the computer over USB — no phone,
+no DJI Mimo app. Plug the receiver in and every setting, live levels, mute,
+internal recording and battery status are right there.
 
-Cross-platform control for DJI wireless microphones over USB — a desktop GUI, a
-command-line tool, and the shared Rust library behind both. No mobile app
-required.
+This is a fork of [ShadowBitBasher/DJI-Mic-Control](https://github.com/ShadowBitBasher/DJI-Mic-Control)
+that adds **DJI Mic 3** support, a redesigned interface and six languages.
 
-- **GUI** — a native app (Windows, macOS, Linux) with a hidable device sidebar,
-  live status, audio meters, and every setting as a control.
-- **CLI** — `djimic` for scripting and one-shot `get`/`set`.
-- **Library** — a protocol crate and a device crate you can build on.
+![DJI Mic Control — dark theme](docs/screenshots/main-dark.png)
 
-The wire protocol is documented in [PROTOCOL.md](PROTOCOL.md).
+<table>
+  <tr>
+    <td><img alt="Light theme, one transmitter recording and one muted" src="docs/screenshots/main-light.png"></td>
+    <td><img alt="Spanish UI with the device switcher open and the Outdoor scene applied" src="docs/screenshots/scenes-es.png"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Light theme · TX1 recording, TX2 muted</sub></td>
+    <td align="center"><sub>Spanish · device switcher and scene presets</sub></td>
+  </tr>
+</table>
 
-## macOS "DJI Mic Control.app is damaged and can't be opened"
+## Download
 
-macOS's security "gatekeeper" does not like that this app is not signed with an Apple developer account. Unfortunately, this means macOS will refuse to open an app downloaded unless you release it from quarantine.
+**[⬇ DJI Mic Control 1.2.0 for macOS (Apple Silicon)](https://github.com/qubik89/DJIMic3/releases/download/v1.2.0/DJI-Mic-Control_1.2.0_macOS_arm64.dmg)**
+· [all releases](https://github.com/qubik89/DJIMic3/releases)
 
-After copying the app from the dmg to Applications, execute the following command to clear the quarantine flag:
+1. Open the `.dmg` and drag **DJI Mic Control** to **Applications**.
+2. The app isn't signed with an Apple developer account, so macOS may say it
+   is "damaged". Clear the quarantine flag once:
+   ```bash
+   sudo xattr -rd com.apple.quarantine "/Applications/DJI Mic Control.app"
+   ```
+3. Connect the receiver with a USB-C cable and open the app.
+
+Windows and Linux builds aren't published yet; [build them from source](#build-from-source).
+
+## Features
+
+- **Live channel strips** per transmitter: segmented level meter with peak hold
+  and a clip indicator, Mute and Record buttons with a running timer, voice
+  tone and input gain.
+- **Receiver controls**: channel mode (mono / stereo / 4-channel), output gain,
+  headphone volume, lossless audio, battery and indoor/outdoor environment.
+- **Quick actions**: mute or record on every transmitter at once.
+- **Scenes**: Interview, Outdoor, Vlog and Podcast presets that change several
+  settings in one click (only what differs is sent).
+- **All the settings**, grouped in tabs with an explanation under each one:
+  noise cancelling, low cut, clipping control, loudness balance, auto-off,
+  camera power sync, LEDs, vibration, 32-bit float, loop recording, automatic
+  recording triggers…
+- **Battery** for the receiver and every transmitter (≈ percentage), plus the
+  internal recording time left on each transmitter.
+- **Clock sync**: the transmitters' clock is set on connect so internal
+  recordings get correct timestamps.
+- **Dark and light themes**, following the system by default.
+- **Languages**: English, Español (España), Français, Italiano, Deutsch and
+  Nederlands. The app starts in the system language and can be changed from
+  the globe button; the tray and macOS menus follow it.
+- **Menu bar / tray** shortcuts for LEDs and noise cancelling, with a
+  low-battery warning.
+- **Command line tool** (`djimic`) for scripting.
+
+## Supported devices
+
+| Device | Status |
+| --- | --- |
+| **DJI Mic 3** (receiver `2ca3:4015`, `2ca3:4115` in 4-channel mode) | Full control, tested with firmware 03.01.00.10 and two transmitters. Up to four transmitters are supported but only two were tested. |
+| **DJI Mic Mini** / **Mic Mini 2** transmitters (receiver `2ca3:4011`) | Supported by the original project (v1 and v2 firmware). |
+
+Not available on the Mic 3 because the hardware doesn't offer it: Safety Track
+(DJI replaced it with 32-bit float internal recording). Not yet implemented:
+timecode, monitor source selection, dual-file recording, formatting the
+transmitters' storage, and changing the indoor/outdoor environment (it's
+shown, but has to be changed on the receiver).
+
+Battery percentages are estimates: the microphones only report seven battery
+levels. Level-meter dB values are approximate too.
+
+## Command line
+
 ```bash
-sudo xattr -rd com.apple.quarantine /Applications/DJI\ Mic\ Control.app
-```
-
-## Languages
-
-The GUI is available in English, Spanish (Spain), French, Italian, German and
-Dutch. It starts in the system language when supported (English otherwise);
-change it from the globe menu in the title bar. The choice is remembered, and
-the tray menu and macOS app menu follow it. Device names, serials and the CLI
-stay in English.
-
-## Windows USB access
-
-Windows binds the receiver's HID interface to its own class driver, and unlike
-Linux/macOS, user-mode code cannot detach and claim that interface at runtime —
-only an interface bound to WinUSB (or libusbK) can be opened. To fix this issue, use [Zadig](https://zadig.akeo.ie/) to replace the
-driver on the receiver's HID interface `Interface 6` with WinUSB, then replug the receiver.
-
-<img alt="Zadig set to WinUSB for the DJI Mic Mini's HID interface" src="zadig.png" width="49%">
-
-## Linux USB access
-
-Non-root USB access needs a udev rule. The `.deb`/`.rpm` install it for you;
-otherwise, or when running from source, install it manually:
-
-```
-sudo cp packaging/60-dji-mic.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules && sudo udevadm trigger
-# then replug the receiver
-```
-
-The GUI detects a connected-but-inaccessible device and shows these steps in
-an in-app helper.
-
-## Layout
-
-```
-crates/protocol   Framing, CRC, commands, heartbeat decoding, per-model settings
-crates/device     USB transport (nusb) + multi-device manager, platform helpers
-crates/cli        `djimic` command-line tool
-gui               Tauri v2 app (Rust backend in src-tauri, Svelte frontend)
-packaging         Linux udev rule shipped in the .deb/.rpm
-```
-
-Adding a setting means editing one model definition in `crates/protocol`; both
-the CLI and GUI pick it up automatically. Adding a new microphone means
-implementing the `DeviceModel` trait and registering it.
-
-## Prerequisites
-
-- Rust (1.77+) and Cargo.
-- Node.js 18+ and npm (for the GUI frontend). `npm install` in `gui/` pulls in
-  the Tauri CLI (`@tauri-apps/cli`) as a dev dependency — no separate
-  `cargo install tauri-cli` needed, and no global install to keep in sync
-  with the project's pinned Tauri version.
-- **Linux** additionally needs the WebKitGTK / GTK development packages Tauri
-  requires (e.g. `webkit2gtk-4.1`, `libgtk-3-dev`, `libayatana-appindicator3`,
-  `librsvg2`), plus `nsis`/`rpmbuild` etc. only when producing those bundles.
-
-## Build & run
-
-CLI:
-
-```
 cargo run -p cli -- list
 cargo run -p cli -- status
 cargo run -p cli -- set noise-cancel strong
+cargo run -p cli -- set --tx 1 voice-tone rich
+cargo run -p cli -- set lossless on
 ```
 
-GUI (dev), from `gui/`:
+`djimic status` shows every setting and its current value; the setting ids are
+defined in `crates/protocol/src/models/`.
 
+## Platform notes
+
+**macOS** works out of the box (see [Download](#download)).
+
+**Linux** needs a udev rule for non-root USB access. The `.deb`/`.rpm` install
+it; otherwise:
+
+```bash
+sudo cp packaging/60-dji-mic.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
+
+Then replug the receiver. The app shows these steps if it can't access the
+device.
+
+**Windows** binds the receiver's control interface to its own driver, so it has
+to be switched to WinUSB with [Zadig](https://zadig.akeo.ie/): interface 6 on
+the Mic Mini, interface 4 (`com.dji.mic`) on the Mic 3 (untested on Windows).
+Replug the receiver afterwards.
+
+<img alt="Zadig set to WinUSB for the DJI Mic Mini's HID interface" src="zadig.png" width="49%">
+
+## Build from source
+
+Requirements: Rust 1.77+ and Node.js 18+ (Linux also needs the WebKitGTK/GTK
+development packages Tauri requires).
+
+```bash
+./build-release.sh            # macOS/Linux → Release/<os>/ (.app + .dmg, or .deb/.rpm/.AppImage)
+./build-release.ps1           # Windows
+```
+
+For development, from `gui/`:
+
+```bash
 npm install
-npm run tauri dev      # or: npx tauri dev
+npm run tauri dev
 ```
 
-Always launch the GUI through `tauri dev` (one of the forms above), never
-`cargo run -p djimic-gui` / `cargo build -p djimic-gui` + running the binary
-directly. A debug build loads its frontend from the Vite dev server
-(`http://localhost:5173`) instead of the bundled files, and only `tauri dev`
-actually starts that dev server for you — running the binary on its own
-tries to reach a server that was never started, and the window comes up
-blank/white with no content.
+Always launch the GUI through `tauri dev`; a bare debug binary loads its
+frontend from the dev server and shows a blank window. Run the tests with
+`cargo test`.
 
-To just **run a working build** without developing (e.g. to check something
-quickly), don't use a debug build at all — do a release build instead (see
-[Packaging](#packaging) below), which embeds the frontend directly and has no
-dependency on the dev server:
+The release script sets path-remapping `RUSTFLAGS` so binaries don't embed the
+build machine's home directory, and checks the result.
+
+## Project layout
 
 ```
-./build-release.sh                      # macOS/Linux; see build-release.ps1 on Windows
-open "Release/macos/DJI Mic Control.app" # or the equivalent .deb/.rpm/.AppImage/.exe
+crates/protocol   Framing, CRC, commands, status decoding, per-model settings (Mic Mini, Mic 3)
+crates/device     USB transport (nusb), command ACK/retry, multi-device manager
+crates/cli        djimic command-line tool
+gui               Tauri v2 app (Rust backend in src-tauri, Svelte 5 frontend)
+packaging         Linux udev rule shipped in the .deb/.rpm
+docs/screenshots  README images
 ```
 
-Run the tests:
+Adding a setting means editing one model definition in `crates/protocol`; the
+CLI and GUI pick it up automatically. The wire protocol, including everything
+learned about the Mic 3, is documented in [PROTOCOL.md](PROTOCOL.md).
 
-```
-cargo test
-```
+## Credits
 
-## Packaging
+- [ShadowBitBasher/DJI-Mic-Control](https://github.com/ShadowBitBasher/DJI-Mic-Control):
+  the original app, protocol work and Mic Mini support.
+- [SanMurakami/mic3-bridge](https://github.com/SanMurakami/mic3-bridge) and
+  [usokawa/dji-mic-mo](https://github.com/usokawa/dji-mic-mo): command ids that
+  were cross-checked while mapping the Mic 3.
+- Translation structure based on the Simplified Chinese proposal in the
+  upstream repository (PR #3).
 
-The GUI is the shipped product. Use the release-build script at the repo
-root — it sets the mandatory path-privacy `RUSTFLAGS` (see below), builds,
-collects the artifacts into `Release/<os>/`, and verifies nothing leaked:
-
-```
-./build-release.sh          # macOS/Linux
-./build-release.ps1         # Windows (PowerShell)
-```
-
-produces, per platform:
-
-| Platform | Artifacts                                         |
-| -------- | ------------------------------------------------- |
-| macOS    | `.app`, `.dmg`                                    |
-| Windows  | `.exe` portable, `.exe` installer (NSIS)          |
-| Linux    | `.deb`, `.rpm`, `.AppImage`                       |
-
-Build on each target OS to produce that OS's bundles. The `.deb` and `.rpm`
-install the udev rule (`packaging/60-dji-mic.rules`) automatically.
-
-Equivalent to running, by hand, from `gui/` (after `npm install`):
-
-```
-RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}/= --remap-path-prefix=$HOME/=/" npx tauri build
-```
-
-— the script is preferred since it also collects the artifacts and runs the
-path-leak verification for you.
-
-The CLI builds the same way:
-`RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}/= --remap-path-prefix=$HOME/=/" cargo build -p cli --release`
-→ `target/release/djimic`.
-
-The `RUSTFLAGS` remap is **mandatory** for any binary you ship: Rust bakes the
-absolute source path of every crate into panic-message and backtrace strings,
-which `strip` does *not* remove, so without this a crash would leak the build
-machine's home directory (username, hostname). The remap keys off `$HOME` and
-`$CARGO_HOME`, not the current directory, so it works from any build location;
-the first prefix also covers CI hosts that relocate `CARGO_HOME` outside
-`$HOME`. It also keeps release builds reproducible and independent of the build
-machine's paths. On a headless build host (no FUSE), prepend
-`APPIMAGE_EXTRACT_AND_RUN=1` so the AppImage tooling runs by extraction rather
-than mounting.
+Not affiliated with or endorsed by DJI. DJI and DJI Mic are trademarks of SZ
+DJI Technology Co., Ltd.; product images are used to identify the devices.
 
 ## License
 
-Released into the public domain under [The Unlicense](LICENSE). Do anything you
-like with it — no attribution required.
-
-Third-party dependencies keep their own (permissive) licenses; their notices are
-included automatically in distributed binaries.
+Released into the public domain under [The Unlicense](LICENSE). Third-party
+dependencies keep their own licenses; their notices are included in
+distributed binaries.
