@@ -25,7 +25,7 @@ const status = {
   nc_enabled: true,
   tx: [tx(64, 2, "rich", "0", 371), tx(41, 3, "standard", "p2", 388), null, null],
   rx: {
-    serial: null,
+    serial: "9SEXNC5047D21R",
     firmware: FW,
     battery: 2,
     charging: false,
@@ -60,6 +60,13 @@ const status = {
   gain_dial: null,
 };
 
+// The "live" scene (the website's main screenshot): both transmitters
+// recording, TX2 muted.
+export function liveScene() {
+  for (const t of status.tx.slice(0, 2)) t.settings.record = "on";
+  status.tx[1].settings.mute = "on";
+}
+
 export function snapshot(withDevice) {
   if (!withDevice) {
     return { os: "macos", probe: { os: "macos", present: 0, accessible: 0, permission_issue: false }, devices: [], status: null, settings: [] };
@@ -74,7 +81,7 @@ export function snapshot(withDevice) {
         model_name: "DJI Mic 3",
         pictogram_key: "mic-3",
         connected: true,
-        rx_serial: null,
+        rx_serial: status.rx.serial,
         tx: [{ battery: 2, charging: false }, { battery: 3, charging: false }, null, null],
         max_tx: 4,
       },
