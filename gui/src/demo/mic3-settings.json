@@ -1,0 +1,899 @@
+[
+  {
+    "id": "noise-cancel",
+    "label": "Noise Cancel",
+    "group": "Audio",
+    "kind": "enum",
+    "v1_command": 55,
+    "v2_command": 55,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "basic",
+        "label": "Basic",
+        "wire": 0
+      },
+      {
+        "value": "strong",
+        "label": "Strong",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "noise-cancel-power",
+    "label": "Noise Cancelling",
+    "group": "Audio",
+    "kind": "toggle",
+    "v1_command": 56,
+    "v2_command": 56,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "noise-cancel-button",
+    "label": "Toggle via TX power button",
+    "group": "Audio",
+    "kind": "toggle",
+    "v1_command": 15,
+    "v2_command": 15,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "low-cut",
+    "label": "Low Cut",
+    "group": "Audio",
+    "kind": "toggle",
+    "v1_command": 3,
+    "v2_command": 3,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "stereo",
+    "label": "Channels",
+    "group": "Audio",
+    "kind": "enum",
+    "v1_command": 8,
+    "v2_command": 8,
+    "v2_target": {
+      "fixed": 0
+    },
+    "options": [
+      {
+        "value": "mono",
+        "label": "Mono",
+        "wire": 0
+      },
+      {
+        "value": "stereo",
+        "label": "Stereo",
+        "wire": 2
+      },
+      {
+        "value": "quad",
+        "label": "4CH",
+        "wire": 4
+      }
+    ],
+    "exclusive_with": [],
+    "note": "Switching to or from 4CH reconnects the receiver's USB audio.",
+    "locked": null
+  },
+  {
+    "id": "rx-gain",
+    "label": "RX Gain",
+    "group": "Audio",
+    "kind": "enum",
+    "v1_command": 57,
+    "v2_command": 57,
+    "v2_target": {
+      "fixed": 0
+    },
+    "options": [
+      {
+        "value": "m12",
+        "label": "−12",
+        "wire": 244
+      },
+      {
+        "value": "m6",
+        "label": "−6",
+        "wire": 250
+      },
+      {
+        "value": "0",
+        "label": "0",
+        "wire": 0
+      },
+      {
+        "value": "p6",
+        "label": "+6",
+        "wire": 6
+      },
+      {
+        "value": "p12",
+        "label": "+12",
+        "wire": 12
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "lossless",
+    "label": "Lossless Audio",
+    "group": "Audio",
+    "kind": "toggle",
+    "v1_command": 39,
+    "v2_command": 39,
+    "v2_target": {
+      "fixed": 0
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "monitor-gain",
+    "label": "Monitoring Gain",
+    "group": "Audio",
+    "kind": "select",
+    "v1_command": 38,
+    "v2_command": 38,
+    "v2_target": {
+      "fixed": 0
+    },
+    "options": [
+      {
+        "value": "m12",
+        "label": "-12 dB",
+        "wire": 244
+      },
+      {
+        "value": "m11",
+        "label": "-11 dB",
+        "wire": 245
+      },
+      {
+        "value": "m10",
+        "label": "-10 dB",
+        "wire": 246
+      },
+      {
+        "value": "m9",
+        "label": "-9 dB",
+        "wire": 247
+      },
+      {
+        "value": "m8",
+        "label": "-8 dB",
+        "wire": 248
+      },
+      {
+        "value": "m7",
+        "label": "-7 dB",
+        "wire": 249
+      },
+      {
+        "value": "m6",
+        "label": "-6 dB",
+        "wire": 250
+      },
+      {
+        "value": "m5",
+        "label": "-5 dB",
+        "wire": 251
+      },
+      {
+        "value": "m4",
+        "label": "-4 dB",
+        "wire": 252
+      },
+      {
+        "value": "m3",
+        "label": "-3 dB",
+        "wire": 253
+      },
+      {
+        "value": "m2",
+        "label": "-2 dB",
+        "wire": 254
+      },
+      {
+        "value": "m1",
+        "label": "-1 dB",
+        "wire": 255
+      },
+      {
+        "value": "0",
+        "label": "0 dB",
+        "wire": 0
+      },
+      {
+        "value": "p1",
+        "label": "+1 dB",
+        "wire": 1
+      },
+      {
+        "value": "p2",
+        "label": "+2 dB",
+        "wire": 2
+      },
+      {
+        "value": "p3",
+        "label": "+3 dB",
+        "wire": 3
+      },
+      {
+        "value": "p4",
+        "label": "+4 dB",
+        "wire": 4
+      },
+      {
+        "value": "p5",
+        "label": "+5 dB",
+        "wire": 5
+      },
+      {
+        "value": "p6",
+        "label": "+6 dB",
+        "wire": 6
+      },
+      {
+        "value": "p7",
+        "label": "+7 dB",
+        "wire": 7
+      },
+      {
+        "value": "p8",
+        "label": "+8 dB",
+        "wire": 8
+      },
+      {
+        "value": "p9",
+        "label": "+9 dB",
+        "wire": 9
+      },
+      {
+        "value": "p10",
+        "label": "+10 dB",
+        "wire": 10
+      },
+      {
+        "value": "p11",
+        "label": "+11 dB",
+        "wire": 11
+      },
+      {
+        "value": "p12",
+        "label": "+12 dB",
+        "wire": 12
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "tx-clip-control",
+    "label": "Clipping Control",
+    "group": "Audio",
+    "kind": "toggle",
+    "v1_command": 36,
+    "v2_command": 36,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "loudness-balance",
+    "label": "Loudness Balance",
+    "group": "Audio",
+    "kind": "toggle",
+    "v1_command": 44,
+    "v2_command": 44,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 1
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 2
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "auto-off-15m",
+    "label": "Auto Off RX (15 min)",
+    "group": "Power & Startup",
+    "kind": "toggle",
+    "v1_command": 16,
+    "v2_command": 16,
+    "v2_target": {
+      "fixed": 0
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "tx-auto-off-15m",
+    "label": "Auto Off TX (15 min)",
+    "group": "Power & Startup",
+    "kind": "toggle",
+    "v1_command": 16,
+    "v2_command": 16,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "camera-power",
+    "label": "RX On/Off follows Camera",
+    "group": "Power & Startup",
+    "kind": "toggle",
+    "v1_command": 32,
+    "v2_command": 32,
+    "v2_target": {
+      "fixed": 0
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "plug-free",
+    "label": "Plug-Free Ext. Speaker",
+    "group": "Device",
+    "kind": "toggle",
+    "v1_command": 35,
+    "v2_command": 35,
+    "v2_target": {
+      "fixed": 0
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": "Changing this reboots the receiver.",
+    "locked": null
+  },
+  {
+    "id": "mic-leds",
+    "label": "Mic LEDs",
+    "group": "Device",
+    "kind": "toggle",
+    "v1_command": 10,
+    "v2_command": 10,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 2
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 0
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "vibration",
+    "label": "TX Vibration",
+    "group": "Device",
+    "kind": "toggle",
+    "v1_command": 4,
+    "v2_command": 4,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "float32",
+    "label": "32-bit Float",
+    "group": "Internal Recording",
+    "kind": "toggle",
+    "v1_command": 12,
+    "v2_command": 12,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "loop-recording",
+    "label": "Loop Recording",
+    "group": "Internal Recording",
+    "kind": "toggle",
+    "v1_command": 42,
+    "v2_command": 42,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "startup-recording",
+    "label": "Record on Power-On",
+    "group": "Internal Recording",
+    "kind": "toggle",
+    "v1_command": 46,
+    "v2_command": 46,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "low-power-recording",
+    "label": "Low-Battery Auto Record",
+    "group": "Internal Recording",
+    "kind": "toggle",
+    "v1_command": 43,
+    "v2_command": 43,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "rec-stop",
+    "label": "Record via TX Button",
+    "group": "Internal Recording",
+    "kind": "toggle",
+    "v1_command": 11,
+    "v2_command": 11,
+    "v2_target": {
+      "fixed": 65535
+    },
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "mute",
+    "label": "Mute",
+    "group": "Transmitter",
+    "kind": "toggle",
+    "v1_command": 9,
+    "v2_command": 9,
+    "v2_target": "tx",
+    "options": [
+      {
+        "value": "off",
+        "label": "Off",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "On",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "record",
+    "label": "Recording",
+    "group": "Transmitter",
+    "kind": "toggle",
+    "v1_command": 2,
+    "v2_command": 2,
+    "v2_target": "tx",
+    "options": [
+      {
+        "value": "off",
+        "label": "Stopped",
+        "wire": 0
+      },
+      {
+        "value": "on",
+        "label": "Recording",
+        "wire": 1
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "voice-tone",
+    "label": "Voice Tone",
+    "group": "Transmitter",
+    "kind": "enum",
+    "v1_command": 41,
+    "v2_command": 41,
+    "v2_target": "tx",
+    "options": [
+      {
+        "value": "standard",
+        "label": "Standard",
+        "wire": 0
+      },
+      {
+        "value": "rich",
+        "label": "Rich",
+        "wire": 1
+      },
+      {
+        "value": "bright",
+        "label": "Bright",
+        "wire": 2
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  },
+  {
+    "id": "tx-gain",
+    "label": "Gain",
+    "group": "Transmitter",
+    "kind": "select",
+    "v1_command": 57,
+    "v2_command": 57,
+    "v2_target": "tx",
+    "options": [
+      {
+        "value": "m12",
+        "label": "-12 dB",
+        "wire": 244
+      },
+      {
+        "value": "m11",
+        "label": "-11 dB",
+        "wire": 245
+      },
+      {
+        "value": "m10",
+        "label": "-10 dB",
+        "wire": 246
+      },
+      {
+        "value": "m9",
+        "label": "-9 dB",
+        "wire": 247
+      },
+      {
+        "value": "m8",
+        "label": "-8 dB",
+        "wire": 248
+      },
+      {
+        "value": "m7",
+        "label": "-7 dB",
+        "wire": 249
+      },
+      {
+        "value": "m6",
+        "label": "-6 dB",
+        "wire": 250
+      },
+      {
+        "value": "m5",
+        "label": "-5 dB",
+        "wire": 251
+      },
+      {
+        "value": "m4",
+        "label": "-4 dB",
+        "wire": 252
+      },
+      {
+        "value": "m3",
+        "label": "-3 dB",
+        "wire": 253
+      },
+      {
+        "value": "m2",
+        "label": "-2 dB",
+        "wire": 254
+      },
+      {
+        "value": "m1",
+        "label": "-1 dB",
+        "wire": 255
+      },
+      {
+        "value": "0",
+        "label": "0 dB",
+        "wire": 0
+      },
+      {
+        "value": "p1",
+        "label": "+1 dB",
+        "wire": 1
+      },
+      {
+        "value": "p2",
+        "label": "+2 dB",
+        "wire": 2
+      },
+      {
+        "value": "p3",
+        "label": "+3 dB",
+        "wire": 3
+      },
+      {
+        "value": "p4",
+        "label": "+4 dB",
+        "wire": 4
+      },
+      {
+        "value": "p5",
+        "label": "+5 dB",
+        "wire": 5
+      },
+      {
+        "value": "p6",
+        "label": "+6 dB",
+        "wire": 6
+      },
+      {
+        "value": "p7",
+        "label": "+7 dB",
+        "wire": 7
+      },
+      {
+        "value": "p8",
+        "label": "+8 dB",
+        "wire": 8
+      },
+      {
+        "value": "p9",
+        "label": "+9 dB",
+        "wire": 9
+      },
+      {
+        "value": "p10",
+        "label": "+10 dB",
+        "wire": 10
+      },
+      {
+        "value": "p11",
+        "label": "+11 dB",
+        "wire": 11
+      },
+      {
+        "value": "p12",
+        "label": "+12 dB",
+        "wire": 12
+      }
+    ],
+    "exclusive_with": [],
+    "note": null,
+    "locked": null
+  }
+]

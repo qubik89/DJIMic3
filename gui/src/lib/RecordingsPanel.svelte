@@ -522,7 +522,10 @@
   }
   .row {
     display: grid;
-    grid-template-columns: 18px minmax(130px, 1.6fr) 56px minmax(96px, 1fr) auto 64px 84px;
+    /* Every row is its own grid, so the columns are fixed to line up. The
+       format column fits the longest label ("32 bits flottant · 48 kHz",
+       25 monospaced characters); the date gives way first. */
+    grid-template-columns: 18px minmax(96px, 1fr) 56px 184px auto 64px 84px;
     align-items: center;
     gap: 12px;
     padding: 8px 8px;
@@ -557,6 +560,10 @@
   .dur,
   .size {
     text-align: right;
+  }
+  .fmt {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .tag {
     padding: 2px 6px;
