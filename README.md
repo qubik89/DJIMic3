@@ -24,6 +24,25 @@ that adds **DJI Mic 3** support, a redesigned interface and six languages.
   </tr>
 </table>
 
+**Recordings and no cables** (new in 1.6):
+
+<table>
+  <tr>
+    <td colspan="2"><img alt="Recordings panel listing the takes on two DJI Mic 3 transmitters in the charging case, with date, length, format, size and import state" src="docs/screenshots/recordings.png"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>Recordings · the takes on both transmitters in the charging case, ready to import (sample recordings)</sub></td>
+  </tr>
+  <tr>
+    <td><img alt="Downloading from a transmitter without the case: the step that asks for one press of the link button after it buzzes twice" src="docs/screenshots/wireless-transmitter.png"></td>
+    <td><img alt="Connecting the receiver without a cable: the steps on the receiver's own screen, up to Connect to App" src="docs/screenshots/wireless-receiver.png"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>No case · a transmitter over Bluetooth and its own Wi-Fi</sub></td>
+    <td align="center"><sub>No cable · the receiver over its Wi-Fi, step by step</sub></td>
+  </tr>
+</table>
+
 ## Download
 
 Latest release: **[all files and notes](https://github.com/qubik89/DJIMic3/releases/latest)**
