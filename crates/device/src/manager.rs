@@ -8,7 +8,7 @@ use nusb::MaybeFuture;
 use protocol::{model_for_usb, DeviceModel, DeviceStatus, Setting, V2Target};
 use serde::Serialize;
 
-use crate::actor::{self, now_millis, Actor};
+use crate::actor::{self, now_millis, Actor, Transport};
 use crate::error::{DeviceError, Result};
 use crate::platform::{current_os, Os};
 
@@ -131,7 +131,7 @@ impl DeviceManager {
                 }
                 match info.open().wait().and_then(|dev| claim(model, &dev)) {
                     Ok(iface) => {
-                        let actor = actor::spawn(model, iface);
+                        let actor = actor::spawn(model, Transport::Usb(iface));
                         handles.insert(id, Handle { actor });
                     }
                     Err(e) => {
@@ -176,11 +176,35 @@ impl DeviceManager {
         }
         let dev = nusb::Device::from_fd(fd).wait().map_err(|e| DeviceError::Usb(e.to_string()))?;
         let iface = claim(model, &dev).map_err(|e| DeviceError::Usb(e.to_string()))?;
-        handles.insert(id.clone(), Handle { actor: actor::spawn(model, iface) });
+        handles.insert(id.clone(), Handle { actor: actor::spawn(model, Transport::Usb(iface)) });
         let mut probe = self.probe.lock().unwrap();
         probe.present = handles.len();
         probe.accessible = handles.len();
         Ok(id)
+    }
+
+    /// Take over a Mic 3 receiver reached over its own Wi-Fi: `stream` is the
+    /// DUML session on its access point (TCP 60000), `label` its network
+    /// name. Returns the device id.
+    pub fn adopt_stream(&self, label: &str, stream: std::net::TcpStream) -> Result<String> {
+        // The Mic 3 receiver's USB id picks its model; the receiver confirms
+        // it once it answers "get version".
+        let model = model_for_usb(0x2ca3, 0x4015).ok_or_else(|| DeviceError::NotFound("DJI Mic 3".into()))?;
+        let id = format!("wifi:{label}");
+        let mut handles = self.handles.lock().unwrap();
+        handles.insert(id.clone(), Handle { actor: actor::spawn(model, Transport::Tcp(stream)) });
+        Ok(id)
+    }
+
+    /// Stop tracking a device (closes a Wi-Fi receiver's session). Returns
+    /// whether it was tracked.
+    pub fn forget(&self, id: &str) -> bool {
+        self.handles.lock().unwrap().remove(id).is_some()
+    }
+
+    /// Whether `id` is tracked and its link still open.
+    pub fn is_alive(&self, id: &str) -> bool {
+        self.handles.lock().unwrap().get(id).is_some_and(|h| h.actor.alive.load(Ordering::Relaxed))
     }
 
     /// The most recent bus-scan result.

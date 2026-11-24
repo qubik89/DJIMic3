@@ -661,6 +661,172 @@ Two read-only requests (documented for the Mobile RX by
 The Mic 3 receiver never sends a product-name record (`0x06`) for itself; its
 transmitters don't either, so they show as "TX1"/"TX2".
 
+### Transmitter storage and recordings
+
+Internal recordings never travel over the receiver link. The Mic 3
+transmitter has no USB port of its own: in the charging case with the case
+plugged in over USB-C (or on the magnetic cable), each transmitter enumerates
+as its own USB mass-storage device behind the case's hub:
+
+| Field | Value |
+| --- | --- |
+| USB id | `be57:0104` (vendor string `bestechnic`, product `Wireles Mic Tx`, sic) |
+| Serial | `20151006.1` on every transmitter, so useless for telling them apart |
+| Interface | class 8 (mass storage), subclass 6 (SCSI), protocol `0x50` (bulk-only) |
+| Medium | "Mic Tx", 30.1 GB, FAT32 with no partition table, volume label `NO NAME` |
+
+A receiver left in the case shows up behind the same hub with its usual id
+(`2ca3:4015`); it has no storage interface.
+
+Layout (firmware 02.00.06.01 and 03.01.00.10):
+
+```
+TX_MIC002_20261117_121733/                  one folder per transmitter
+  TX01_MIC003_20261123_232008_orig.wav      original track
+  TX01_MIC003_20261123_232008_edit.wav      processed copy (dual-file recording)
+```
+
+- `TX<nn>` is the receiver channel the transmitter was paired to, `MIC<nnn>`
+  a running take number, then the local start date and time (correct thanks to
+  the clock sync above). `_edit` files appear only with dual-file recording on;
+  they have the same size as the `_orig` file and differ in the audio.
+- The folder name is the transmitter's first take; it doesn't change when
+  more takes are added, so the app uses it as the transmitter's id.
+- Files are Broadcast WAV: `fmt ` (PCM, mono, 48 kHz, 24-bit; IEEE float with
+  32-bit float recording), a 602-byte `bext` (description `ver:<firmware>`,
+  originator `MIC 3`, origination date and time, time reference 0, no UMID or
+  loudness), an `iXML` chunk at 29.97 fps NDF repeating the `bext` fields,
+  an empty `cue ` chunk and a `PAD ` chunk that puts the audio at byte 32776.
+
+The app's import (crate `recordings`) recognises a transmitter by that folder
+pattern rather than the label or USB id, so it works the same on every OS.
+
+### Bluetooth LE (receiver)
+
+The Mic 3 receiver also speaks this protocol over Bluetooth LE — the link
+DJI Mimo uses. Seen with firmware 03.01.00.10:
+
+- Advertising name `DJI Mic 3 RX-<6 hex digits>`, connectable, service UUID
+  `FFF0`, manufacturer data `aa08 b300 0088298563d7b1` (`aa08` + model
+  `b3 00` + device bytes, the same shape as DJI's Osmo cameras).
+- One primary service `FFF0` with three characteristics: `FFF3` and `FFF4`
+  (read, write, notify, indicate) and `FFF5` (read, write without response,
+  notify, indicate). Negotiated maximum write: 512 bytes with response, 248
+  without.
+- Device → app frames arrive as notifications on `FFF4`; app → device frames
+  are written to `FFF5` without response. Framing, CRCs and addresses are
+  exactly the USB ones (app `0x02`, receiver `0x5a`).
+- No pairing step was needed: right after subscribing, the receiver sends
+  `cmd set 0x5b, id 0x04` frames (payload `06`) about twice a second, and a
+  **Get version** written to `FFF5` was answered on `FFF4` with `DM303_RX`
+  and the firmware version, as over USB.
+
+### Bluetooth LE (transmitter)
+
+A Mic 3 transmitter advertises only for a short while after its link button
+is held for two seconds (out of the case, powered on); linked to a receiver
+and left alone, neither unit advertises.
+
+- Advertising name `DJI Mic 3 TX-<6 hex digits>`, service `FFF0`,
+  manufacturer data `aa08 b200 008829858065ee` (model `b2 00`; the receiver
+  is `b3 00`), service data `FDEE` = `010107040411f81232534543ff001502514c`.
+  It also appears to Bluetooth Classic inquiry with class of device
+  `0x240404` (audio, wearable headset): the "Bluetooth mic" mode for phones.
+- GATT: the same `FFF0` service as the receiver (`FFF3`/`FFF4`/`FFF5`), the
+  standard LE Audio Volume Control service `1844` (`2B7D` state, `2B7E`
+  control point, `2B7F` flags), and a vendor service
+  `15F1E600-A277-43FC-A484-DD39EF8A9100` with `…E601` (read, notify,
+  indicate) and `…E602` (write, write without response).
+- Its DUML address is **`0x3a`**. Without pairing it pushes, about twice a
+  second, `cmd set 0x5b, id 0x03` frames with the same record format as the
+  receiver's USB pushes (a `0x20`-byte status record and a `0x24`-byte
+  identity record carrying firmware `0a 00 01 03`, the serial number and the
+  name suffix), plus `0x5b`/`0x04` frames with payload `05`.
+- **Get version** addressed to `0x3a` answers `DM303_TX`, firmware
+  03.01.00.10. The same request addressed to `0x5a` gets no answer.
+- A bare DUML **File List** request (`cmd set 0x00, id 0x20`, no payload)
+  gets no answer over BLE: files don't travel over Bluetooth.
+
+### Wireless file download (DJI Mimo)
+
+Captured from DJI Mimo 2.12.12 on iOS (PacketLogger) and reproduced from a
+Mac. Mimo uses BLE only to pair and to get Wi-Fi credentials; the files
+come over the unit's own Wi-Fi access point. Receiver and transmitters each
+have one (`DJI Mic 3 RX-63d7b0`, `DJI Mic 3 TX-817dd8`). Sequence, all on
+`FFF0` (app `0x02` → unit `0x3a`/`0x5a`):
+
+1. Subscribe to notifications on `FFF4` only (Mimo writes `01 00` to its
+   CCCD and nothing else).
+2. Every ~2.5 s: `00/2b` to address `0xf0`, payload `04 00` (app heartbeat).
+3. `00/32` payload `11` → serial number and date/time
+   (`00 01 | year u16 | month day hour min sec | len | serial`); Mimo writes
+   it back with `12 01 …` to set the clock when the unit answers zeros.
+4. **Pair**: `07/45`, payload `20 | 32-char ASCII app id | 04 | 4-digit
+   ASCII PIN (random each time) | 01 01`. Answer `00 02` = waiting for
+   confirmation. **The user must press a button on the unit**; it then
+   sends `07/46` payload `01 00` (approved), which the app acknowledges
+   (flags `0xc0`, same sequence number, payload `00`). Without the press the
+   unit stays at `00 02`, refuses step 6 and drops the link after ~14 s. A
+   known app id doesn't skip the confirmation.
+5. `07/18` payload `41 44 00 00`: switch Wi-Fi on, with the phone's country
+   code (`AD` here). Answer `00`.
+6. `07/07` payload `00` → `00 | len | SSID`; `07/0e` payload `00` →
+   `00 | len | WPA2 passphrase` (8 digits). Both answer `ff 00` if not paired.
+7. **Disconnect BLE right away** (Mimo does it 2 ms after step 6). The access
+   point only comes up once the BLE link is gone: while connected it never
+   appears. It's a visible WPA2 network on 5 GHz (channel 36 here), BSSID =
+   the BLE address + 1, and hands out 192.168.0.x addresses with the unit at
+   192.168.0.1.
+
+Then, on the access point (captured from Mimo with `rvictl` and reproduced
+from a Mac; files came out byte-identical to the USB copies, 3.7 MB/s):
+
+8. The unit broadcasts UDP `01 00 00 00` to `255.255.255.255:10001` about
+   once a second and serves DHCP (Mimo got 192.168.0.2, the Mac .3).
+9. **TCP 192.168.0.1:60000** carries raw DUML frames, no extra header — the
+   same protocol as USB and BLE. Mimo sends `00/00` payload `01 00` (ping,
+   answered `01 00`) every 0.5 s and the `00/2b` heartbeat to `0xf0`, plus
+   status polls (`5b/12`, `5b/09`, `04/1f`).
+10. **`5b/19` payload `01 01 00 01`** (answer `00`) starts the file server.
+    Before it, port 80 refuses connections.
+11. **HTTP on port 80** (plain HTTP/1.1, `Accept-Ranges: bytes`, ETags,
+    `Date` stuck at 1969):
+    - `GET /data/emmc0/files_info.json` →
+      `{"name": "TX RECORD FILES INFO", "files": [{"fname":
+      "data/emmc0/TX_MIC002_…/TX01_MIC003_…_orig.wav", "fsize": 13576258,
+      "duration_sec": 94.1, "date": 20261123232008}, …]}`
+    - `GET /<fname>` → the WAV as stored (`Content-Type: audio/x-wav`),
+      the same bytes as over USB mass storage.
+
+On macOS, seeing or joining the network from a script needs Location
+permission (SSIDs are redacted without it), and the AP shares the home
+network's 192.168.0.0/24, so traffic must be bound to the Wi-Fi interface.
+
+### Receiver over Wi-Fi (control)
+
+The receiver pairs the same way, with three differences:
+
+- It advertises over BLE once **Connect to App** is chosen in the control
+  menu (swipe down on the home screen). While its access point is up it
+  stays silent over BLE, even after the app that opened it has gone.
+- Step 4's confirmation happens on its touch screen: it shows the app's
+  4-digit PIN as a verification code and the user taps to accept.
+- On its access point (`DJI Mic 3 RX-63d7b0`), TCP 60000 carries **exactly
+  the USB frames**: the receiver's status heartbeat (`5b/03`, a `0x26`
+  receiver record, byte-for-byte the receiver-only USB frame), identity
+  pushes and command ACKs. Setting commands are the USB ones (address
+  `0x5a`), and the same `00/00` ping keeps the session open.
+
+**In this mode the receiver drops its transmitters**: they show as
+disconnected on its own screen and no transmitter slots or levels arrive
+(DJI notes the receiver doesn't record while connected to the app). So the
+link is good for the receiver's own settings, not for monitoring.
+
+A unit's access-point passphrase doesn't change between sessions (seen on
+the receiver and a transmitter, from Mimo and from a Mac), so an app can
+remember it and rejoin a unit whose access point is still up without going
+through Bluetooth again.
+
 ---
 
 ## Receiver families and model detection

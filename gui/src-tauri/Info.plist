@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the app's Info.plist by Tauri. -->
+<plist version="1.0">
+<dict>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>DJI Mic Control uses Bluetooth to pair with your DJI Mic 3 and connect to it without a cable.</string>
+  <!-- Localized in macos/<lang>.lproj/InfoPlist.strings (copied by tauri.macos.conf.json). -->
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>es</string>
+    <string>fr</string>
+    <string>it</string>
+    <string>de</string>
+    <string>nl</string>
+  </array>
+</dict>
+</plist>

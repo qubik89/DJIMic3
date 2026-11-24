@@ -1,0 +1,20 @@
+[package]
+name = "link"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Wireless link to DJI Mic 3 units: Bluetooth LE pairing, then the unit's own Wi-Fi access point."
+
+[dependencies]
+protocol = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+futures-lite = { workspace = true }
+btleplug = "0.13"
+tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
+socket2 = { version = "0.6", features = ["all"] }
+uuid = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

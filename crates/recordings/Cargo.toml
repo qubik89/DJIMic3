@@ -1,0 +1,17 @@
+[package]
+name = "recordings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Finds DJI Mic transmitters mounted as USB drives and imports their internal recordings."
+
+[features]
+# Download over the transmitter's own Wi-Fi (Bluetooth pairing first).
+wireless = ["dep:link", "dep:tokio", "dep:serde_json"]
+
+[dependencies]
+serde = { workspace = true }
+link = { workspace = true, optional = true }
+tokio = { version = "1", features = ["rt"], optional = true }
+serde_json = { workspace = true, optional = true }

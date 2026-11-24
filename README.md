@@ -83,6 +83,17 @@ then plug the receiver into the phone's USB-C port. See [Android](#android).
   internal recording time left on each transmitter.
 - **Clock sync**: the transmitters' clock is set on connect so internal
   recordings get correct timestamps.
+- **Import recordings** (desktop): put the transmitters in the charging case
+  and plug the case in over USB-C. The download button lists every take with
+  its date, length and format, copies the new ones into a folder of your
+  choice (one subfolder per day, each copy checked against the original),
+  can then delete the imported files from the transmitters, and ejects them.
+- **No cables** (desktop, DJI Mic 3): a guided, illustrated walkthrough pairs
+  a transmitter over Bluetooth and downloads its recordings over its own
+  Wi-Fi (about 4 MB/s), or connects the receiver over its Wi-Fi to change its
+  settings. The receiver disconnects its transmitters in that mode, and the
+  computer's Wi-Fi is taken while connected (a cable connection keeps
+  working).
 - **Dark and light themes**, following the system by default.
 - **Languages**: English, Español (España), Français, Italiano, Deutsch and
   Nederlands. The app starts in the system language and can be changed from
@@ -179,7 +190,8 @@ USB accessories certified through Apple's MFi programme.
 ## Build from source
 
 Requirements: Rust 1.88+ and Node.js 20.19+ (or 22.12+); Linux also needs the WebKitGTK/GTK
-development packages Tauri requires.
+development packages Tauri requires, plus `libdbus-1-dev` (Bluetooth), and
+NetworkManager at run time for the wireless features.
 
 ```bash
 ./build-release.sh            # macOS/Linux → Release/<os>/ (.app + .dmg, or .deb/.rpm/.AppImage)
@@ -227,6 +239,11 @@ build machine's home directory, and checks the result.
 ```
 crates/protocol   Framing, CRC, commands, status decoding, per-model settings
 crates/device     USB transport (nusb), command ACK/retry, multi-device manager
+crates/recordings Finds transmitters mounted as USB drives, reads their WAV
+                  headers and imports the takes with verification; with the
+                  `wireless` feature, downloads them over the transmitter's Wi-Fi
+crates/link       Bluetooth LE pairing and joining a unit's own Wi-Fi
+                  (networksetup / netsh / nmcli), sockets bound to Wi-Fi
 crates/cli        djimic command-line tool
 gui               Tauri v2 app (Rust backend in src-tauri, Svelte 5 frontend)
 gui/src-tauri/gen/android

@@ -1,12 +1,17 @@
 <script>
+  import { untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { t, locale, selectLocale } from "./lib/i18n.js";
+  import { t, tError, locale, selectLocale } from "./lib/i18n.js";
   import { LOCALES } from "./lib/translations.js";
   import DevicePanel from "./lib/DevicePanel.svelte";
   import UdevModal from "./lib/UdevModal.svelte";
   import SupportCard from "./lib/SupportCard.svelte";
+  import RecordingsPanel from "./lib/RecordingsPanel.svelte";
+  import WirelessWizard from "./lib/WirelessWizard.svelte";
+  import * as recordings from "./lib/recordings.js";
+  import { rxWireless, rxDevices, connectRx, cancelRx, disconnectRx, start as startRx } from "./lib/wirelessRx.js";
   import Toast from "./lib/ui/Toast.svelte";
   import { snapshot, setSetting, setTxSetting, udevHelp } from "./lib/api.js";
   import * as support from "./lib/support.js";
@@ -140,7 +145,7 @@
       );
       if (Object.keys(remainingTx).length !== Object.keys(optimisticTx).length) optimisticTx = remainingTx;
     } catch (e) {
-      error = String(e);
+      error = $tError(e);
     }
   }
 
@@ -160,7 +165,7 @@
       await setSetting(selected, settingId, value);
       await refresh();
     } catch (e) {
-      error = String(e);
+      error = $tError(e);
       showToast(error, "error");
       const { [settingId]: _drop, ...rest } = optimistic;
       optimistic = rest;
@@ -180,7 +185,7 @@
       await setTxSetting(selected, tx, settingId, value);
       await refresh();
     } catch (e) {
-      error = String(e);
+      error = $tError(e);
       showToast(error, "error");
       const { [key]: _drop, ...rest } = optimisticTx;
       optimisticTx = rest;
@@ -219,7 +224,7 @@
     support.save(next);
   }
   function openSupport() {
-    support.openSupport().catch((e) => showToast(String(e), "error"));
+    support.openSupport().catch((e) => showToast($tError(e), "error"));
   }
   function supportLater() {
     supportCard = null; // already held back by markShown
@@ -278,6 +283,68 @@
     };
   });
 
+  // ---- Transmitter recordings (desktop: transmitters mount as USB drives) ----
+  const { drives: recDrives, kind: recKind, job: recJob } = recordings;
+  let showRecordings = $state(false);
+  const newTakes = $derived(
+    $recDrives.reduce((n, tx) => n + tx.takes.filter((take) => recordings.isNew(take, $recKind)).length, 0),
+  );
+  if (!isMobile) recordings.start().catch(() => {});
+  if (!isMobile) startRx().catch(() => {});
+
+  // ---- Receiver over Wi-Fi ---------------------------------------------------
+  let showRxWizard = $state(false);
+  const wirelessSelected = $derived(selectedDevice && $rxDevices.includes(selectedDevice.id));
+  let rxDisconnecting = $state(false);
+  async function connectReceiver() {
+    const id = await connectRx();
+    if (id) {
+      showRxWizard = false;
+      select(id);
+      showToast($t("Receiver connected without a cable"));
+    }
+  }
+  async function disconnectReceiver() {
+    if (!selectedDevice) return;
+    rxDisconnecting = true;
+    try {
+      await disconnectRx(selectedDevice.id);
+      showToast($t("Disconnected. Your Wi-Fi is back to its usual network."));
+    } catch (e) {
+      showToast($tError(e), "error");
+    } finally {
+      rxDisconnecting = false;
+    }
+  }
+  function closeRxWizard() {
+    if ($rxWireless.phase === "connecting") cancelRx();
+    showRxWizard = false;
+  }
+  // Say so when transmitters with new recordings get plugged in.
+  let seenDrives = new Set();
+  $effect(() => {
+    const now = new Set($recDrives.map((tx) => tx.mount));
+    const added = [...now].some((m) => !seenDrives.has(m));
+    seenDrives = now;
+    if (added && newTakes > 0 && !showRecordings) {
+      showToast(
+        newTakes === 1
+          ? $t("1 new recording on the transmitters")
+          : $t("{n} new recordings on the transmitters", { n: newTakes }),
+      );
+    }
+  });
+  // An import finishing while the panel is closed.
+  let handledOutcome = null;
+  $effect(() => {
+    const o = $recJob.outcome;
+    if (!o || o === handledOutcome) return;
+    handledOutcome = o;
+    if (untrack(() => showRecordings) || o.cancelled) return;
+    if (o.failed.length > 0) showToast(`${o.failed[0].file}: ${$tError(o.failed[0].error)}`, "error");
+    else showToast(o.copied === 1 ? $t("1 file imported") : $t("{n} files imported", { n: o.copied }));
+  });
+
   // Keep <html lang> and the native tray/app menus in the chosen language.
   $effect(() => {
     document.documentElement.lang = $locale;
@@ -302,6 +369,21 @@
     <span class="brand" data-tauri-drag-region>DJI Mic Control</span>
     <div class="drag-fill" data-tauri-drag-region></div>
     <div class="top-actions">
+      {#if !isMobile}
+        <button
+          class="icon-btn rec-btn"
+          class:busy={$recJob.running}
+          onclick={() => (showRecordings = true)}
+          aria-label={$t("Recordings")}
+          title={$t("Recordings")}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 4v10m0 0l-4-4m4 4l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M5 15v2.5A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5V15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+          {#if newTakes > 0}<span class="badge">{newTakes > 99 ? "99+" : newTakes}</span>{/if}
+        </button>
+      {/if}
       <button class="icon-btn support-btn" onclick={openSupport} aria-label={$t("Buy me a coffee")} title={$t("Buy me a coffee")}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
@@ -359,6 +441,14 @@
     </button>
   {/if}
 
+  {#if wirelessSelected}
+    <div class="air-bar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 9a12 12 0 0 1 16 0M7 12.5a7.5 7.5 0 0 1 10 0M10 16a3 3 0 0 1 4 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" /><circle cx="12" cy="19" r="1.4" fill="currentColor" /></svg>
+      <span>{$t("Connected without a cable, over the receiver's Wi-Fi. The transmitters stay disconnected in this mode, and this computer has no Internet over Wi-Fi meanwhile.")}</span>
+      <button onclick={disconnectReceiver} disabled={rxDisconnecting}>{$t("Disconnect")}</button>
+    </div>
+  {/if}
+
   <main class="main">
     {#if selectedDevice && status}
       <DevicePanel
@@ -386,6 +476,12 @@
           {:else}
             <h2>{$t("No microphone connected")}</h2>
             <p>{$t("Connect a supported DJI microphone over USB to get started.")}</p>
+            {#if !isMobile}
+              <button class="cta-air" onclick={() => (showRxWizard = true)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 7l10 10-5 5V2l5 5L7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                {$t("Connect a DJI Mic 3 without a cable")}
+              </button>
+            {/if}
           {/if}
         </div>
       </div>
@@ -394,6 +490,22 @@
 
   {#if supportCard}
     <SupportCard onopen={openSupport} onlater={supportLater} onnever={supportNever} />
+  {/if}
+
+  {#if showRecordings}
+    <RecordingsPanel onclose={() => (showRecordings = false)} ontoast={showToast} />
+  {/if}
+
+  {#if showRxWizard}
+    <div class="rx-overlay" onclick={closeRxWizard} role="presentation">
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="rx-sheet" onclick={(e) => e.stopPropagation()} role="dialog" tabindex="-1" aria-modal="true" aria-label={$t("Connect the receiver without a cable")}>
+        <button class="rx-x" onclick={closeRxWizard} aria-label={$t("Close")}>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+        </button>
+        <WirelessWizard unit="rx" store={rxWireless} onstart={connectReceiver} oncancel={cancelRx} onclose={closeRxWizard} />
+      </div>
+    </div>
   {/if}
 
   <Toast {toast} />
@@ -538,6 +650,40 @@
   .support-btn:hover {
     color: var(--rec);
   }
+  .rec-btn {
+    position: relative;
+  }
+  .rec-btn.busy {
+    color: var(--text);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .badge {
+    position: absolute;
+    top: 1px;
+    right: -2px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--inv);
+    color: var(--invInk);
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    line-height: 15px;
+    text-align: center;
+    pointer-events: none;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rec-btn.busy {
+      animation: none;
+    }
+  }
   .topbar svg {
     display: block;
   }
@@ -626,6 +772,88 @@
   .ph-card p {
     margin: 0 0 16px;
     line-height: 1.5;
+  }
+  .cta-air {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    padding: 0 16px;
+    border: 1px solid var(--line2);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text);
+    font-weight: 500;
+    transition: background 0.15s;
+  }
+  .cta-air:hover {
+    background: var(--raise);
+  }
+  .air-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 16px;
+    background: color-mix(in srgb, var(--good) 12%, var(--bg));
+    border-bottom: 1px solid color-mix(in srgb, var(--good) 30%, transparent);
+    color: var(--text);
+    font-size: 12.5px;
+  }
+  .air-bar svg {
+    color: var(--good);
+    flex: 0 0 auto;
+  }
+  .air-bar span {
+    flex: 1 1 auto;
+  }
+  .air-bar button {
+    height: 26px;
+    padding: 0 12px;
+    border: 1px solid var(--line2);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .rx-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(8, 10, 14, 0.45);
+  }
+  .rx-sheet {
+    position: relative;
+    width: min(760px, 100%);
+    max-height: 100%;
+    overflow-y: auto;
+    padding: 44px 20px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line2);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  }
+  .rx-x {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 1;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--dim);
+  }
+  .rx-x:hover {
+    background: var(--raise);
+    color: var(--text);
   }
   .cta {
     height: 38px;

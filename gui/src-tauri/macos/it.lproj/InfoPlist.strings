@@ -1,0 +1,2 @@
+/* Bluetooth permission prompt */
+"NSBluetoothAlwaysUsageDescription" = "DJI Mic Control usa il Bluetooth per abbinarsi al tuo DJI Mic 3 e collegarsi senza cavo.";

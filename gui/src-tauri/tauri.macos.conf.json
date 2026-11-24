@@ -14,5 +14,17 @@
         "visible": false
       }
     ]
+  },
+  "bundle": {
+    "macOS": {
+      "files": {
+        "Resources/en.lproj/InfoPlist.strings": "./macos/en.lproj/InfoPlist.strings",
+        "Resources/es.lproj/InfoPlist.strings": "./macos/es.lproj/InfoPlist.strings",
+        "Resources/fr.lproj/InfoPlist.strings": "./macos/fr.lproj/InfoPlist.strings",
+        "Resources/it.lproj/InfoPlist.strings": "./macos/it.lproj/InfoPlist.strings",
+        "Resources/de.lproj/InfoPlist.strings": "./macos/de.lproj/InfoPlist.strings",
+        "Resources/nl.lproj/InfoPlist.strings": "./macos/nl.lproj/InfoPlist.strings"
+      }
+    }
   }
 }

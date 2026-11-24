@@ -5,6 +5,8 @@
 
 use crate::commands;
 mod locale;
+mod recordings;
+mod wireless;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -459,6 +461,9 @@ pub fn run() {
 
     let manager = Arc::new(DeviceManager::new());
 
+    // A previous run killed mid-session may have left a unit's Wi-Fi saved.
+    std::thread::spawn(link::cleanup);
+
     // Continuously rescan the bus so hotplugged devices appear/disappear.
     let scanner = manager.clone();
     std::thread::spawn(move || loop {
@@ -481,7 +486,11 @@ pub fn run() {
             Some(vec!["--hidden"]),
         ))
         .plugin(tauri_plugin_opener::init())
+        // Folder picker for importing recordings (used from Rust only).
+        .plugin(tauri_plugin_dialog::init())
         .manage(locale::LocaleState::default())
+        .manage(recordings::RecordingsState::default())
+        .manage(wireless::WirelessState::default())
         .manage(manager)
         .setup(move |app| {
             // Set the window icon explicitly so the titlebar and taskbar show it
@@ -644,7 +653,32 @@ pub fn run() {
             commands::set_tx_setting,
             commands::udev_help,
             commands::open_support,
+            recordings::recordings_scan,
+            recordings::recordings_default_dest,
+            recordings::recordings_pick_dest,
+            recordings::recordings_import,
+            recordings::recordings_cancel,
+            recordings::recordings_delete,
+            recordings::recordings_open_dest,
+            recordings::recordings_eject,
+            wireless::wireless_connect,
+            wireless::wireless_cancel,
+            wireless::wireless_transmitter,
+            wireless::wireless_import,
+            wireless::wireless_import_cancel,
+            wireless::wireless_disconnect,
+            wireless::rx_wireless_connect,
+            wireless::rx_wireless_cancel,
+            wireless::rx_wireless_disconnect,
+            wireless::rx_wireless_devices,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running DJI Mic Control");
+        .build(tauri::generate_context!())
+        .expect("error while building DJI Mic Control")
+        .run(|app, event| {
+            // Quitting (menu, tray, Cmd+Q) must give the Wi-Fi back if a
+            // unit is still connected over it.
+            if let tauri::RunEvent::Exit = event {
+                wireless::shutdown(app);
+            }
+        });
 }
