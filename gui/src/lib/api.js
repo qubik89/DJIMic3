@@ -23,3 +23,13 @@ export function setTxSetting(device, tx, setting, value) {
 export function udevHelp() {
   return invoke("udev_help");
 }
+
+/** The plain-text troubleshooting report (DJI USB devices, frames, commands). */
+export function diagnostics() {
+  return invoke("diagnostics");
+}
+
+/** Open the project's "new issue" page in the browser. */
+export function openIssues() {
+  return invoke("open_issues");
+}

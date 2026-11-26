@@ -141,6 +141,14 @@ shows only the controls that receiver and each connected transmitter support.
 | DJI Mic Mini 2 | Voice tone |
 | DJI Mic Mini | Basic settings |
 
+**Something not working, or a model that isn't listed?** Open the diagnostic
+report (the **?** button, or the link under "No microphone connected"), copy it
+and paste it into a [new issue](https://github.com/qubik89/DJIMic3/issues/new).
+It lists every DJI USB device the computer sees with its interfaces, why one
+couldn't be opened, the commands sent and how the receiver answered, and raw
+frames, with serial numbers cut to their last four characters.
+`djimic diagnose` prints the same report.
+
 Not supported: the **DJI Mic 2's own receiver** and the original **DJI Mic**
 (2021) — no USB control interface has been documented for them. Not
 available on the Mic 3 because the hardware doesn't offer it: Safety Track.
@@ -163,6 +171,7 @@ cargo run -p cli -- status
 cargo run -p cli -- set noise-cancel strong
 cargo run -p cli -- set --tx 1 voice-tone rich
 cargo run -p cli -- set lossless on
+cargo run -p cli -- diagnose
 ```
 
 `djimic status` shows every setting and its current value; the setting ids are

@@ -7,6 +7,7 @@
 //! udev-rules helper.
 
 mod actor;
+mod diag;
 pub mod error;
 mod manager;
 pub mod platform;

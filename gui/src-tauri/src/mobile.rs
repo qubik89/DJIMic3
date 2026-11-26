@@ -143,6 +143,8 @@ pub fn run() {
             commands::set_tx_setting,
             commands::udev_help,
             commands::open_support,
+            commands::diagnostics,
+            commands::open_issues,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DJI Mic Control");

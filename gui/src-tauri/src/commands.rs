@@ -10,6 +10,9 @@ use tauri_plugin_opener::OpenerExt;
 /// Ko-fi page for tips. Fixed here so the webview can't open arbitrary URLs.
 pub const SUPPORT_URL: &str = "https://ko-fi.com/qubik";
 
+/// Where users report problems (opened from the diagnostic report).
+pub const ISSUES_URL: &str = "https://github.com/qubik89/DJIMic3/issues/new";
+
 /// Everything the UI needs for one render, fetched in a single call.
 #[derive(Serialize)]
 pub struct Snapshot {
@@ -107,4 +110,20 @@ pub fn open_support_page(app: &AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn open_support(app: AppHandle) -> Result<(), String> {
     open_support_page(&app)
+}
+
+/// The troubleshooting report shown in the diagnostics window.
+#[tauri::command]
+pub async fn diagnostics(app: AppHandle, mgr: State<'_, Arc<DeviceManager>>) -> Result<String, String> {
+    let mgr = mgr.inner().clone();
+    let version = app.package_info().version.to_string();
+    tauri::async_runtime::spawn_blocking(move || mgr.diagnostics(&version))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Open the project's "new issue" page in the default browser.
+#[tauri::command]
+pub fn open_issues(app: AppHandle) -> Result<(), String> {
+    app.opener().open_url(ISSUES_URL, None::<&str>).map_err(|e| e.to_string())
 }

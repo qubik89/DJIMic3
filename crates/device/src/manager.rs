@@ -9,6 +9,7 @@ use protocol::{model_for_usb, DeviceModel, DeviceStatus, Setting, V2Target};
 use serde::Serialize;
 
 use crate::actor::{self, now_millis, Actor, Transport};
+use crate::diag;
 use crate::error::{DeviceError, Result};
 use crate::platform::{current_os, Os};
 
@@ -78,6 +79,9 @@ pub struct Probe {
 pub struct DeviceManager {
     handles: Mutex<HashMap<String, Handle>>,
     probe: Mutex<Probe>,
+    /// Why a matching device couldn't be opened, by bus position, for the
+    /// diagnostic report. Cleared once it opens.
+    open_errors: Mutex<HashMap<String, String>>,
 }
 
 impl Default for DeviceManager {
@@ -96,6 +100,7 @@ impl DeviceManager {
                 accessible: 0,
                 permission_issue: false,
             }),
+            open_errors: Mutex::new(HashMap::new()),
         }
     }
 
@@ -129,15 +134,19 @@ impl DeviceManager {
                 if handles.contains_key(&id) {
                     continue;
                 }
+                let place = bus_place(info.bus_id(), info.device_address());
                 match info.open().wait().and_then(|dev| claim(model, &dev)) {
                     Ok(iface) => {
                         let actor = actor::spawn(model, Transport::Usb(iface));
                         handles.insert(id, Handle { actor });
+                        self.open_errors.lock().unwrap().remove(&place);
                     }
                     Err(e) => {
                         if e.kind() == nusb::ErrorKind::PermissionDenied {
                             permission_issue = true;
                         }
+                        let why = format!("{:?}: {e}", e.kind());
+                        self.open_errors.lock().unwrap().insert(place, why);
                     }
                 }
             }
@@ -331,7 +340,6 @@ impl DeviceManager {
     }
 }
 
-/// A stable per-session device id: the USB serial if present, else bus/address.
 /// Claim the model's control interface (detaching a kernel driver if one
 /// holds it) and select its alternate setting.
 fn claim(model: &'static dyn DeviceModel, dev: &nusb::Device) -> std::result::Result<nusb::Interface, nusb::Error> {
@@ -348,9 +356,205 @@ fn claim(model: &'static dyn DeviceModel, dev: &nusb::Device) -> std::result::Re
     Ok(iface)
 }
 
+/// Where a device sits on the bus, for messages that outlive one scan.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+fn bus_place(bus: &str, address: u8) -> String {
+    format!("bus {bus} address {address}")
+}
+
+/// A stable per-session device id: the USB serial if present, else bus/address.
 fn device_id(serial: Option<&str>, bus: &str, address: u8) -> String {
     match serial {
         Some(s) if !s.is_empty() => s.to_string(),
         _ => format!("usb-{bus}-{address}"),
+    }
+}
+
+/// DJI's USB vendor id.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+const DJI_VENDOR: u16 = 0x2ca3;
+
+/// A readable name for a USB class code.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+fn class_name(class: u8) -> &'static str {
+    match class {
+        0x00 => "per interface",
+        0x01 => "audio",
+        0x02 => "communications",
+        0x03 => "HID",
+        0x06 => "still image / MTP",
+        0x08 => "mass storage",
+        0x0a => "CDC data",
+        0x0e => "video",
+        0xef => "miscellaneous",
+        0xfe => "application specific",
+        0xff => "vendor specific",
+        _ => "other",
+    }
+}
+
+/// Replace every `"serial"` string in a JSON value with its last four
+/// characters.
+fn redact_serials(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, v) in map.iter_mut() {
+                match v {
+                    serde_json::Value::String(s) if key == "serial" => *s = diag::redact(s),
+                    _ => redact_serials(v),
+                }
+            }
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(redact_serials),
+        _ => {}
+    }
+}
+
+impl DeviceManager {
+    /// A plain-text troubleshooting report to paste into an issue or an
+    /// email: every DJI device on the bus with its interfaces and whether it
+    /// could be opened, then for each open device its decoded status, the
+    /// commands sent and how they were answered, and raw frames. Serial
+    /// numbers are cut to their last four characters, in raw bytes too.
+    pub fn diagnostics(&self, app_version: &str) -> String {
+        use std::fmt::Write as _;
+
+        self.refresh();
+        let probe = self.probe();
+        let handles = self.handles.lock().unwrap();
+        let open_errors = self.open_errors.lock().unwrap().clone();
+
+        // Serial numbers to mask: what the devices reported, and USB serials.
+        let mut hide: Vec<String> = Vec::new();
+        for h in handles.values() {
+            let st = h.actor.status.lock().unwrap();
+            hide.extend(st.rx.as_ref().and_then(|r| r.serial.clone()));
+            hide.extend(st.tx.iter().flatten().filter_map(|t| t.serial.clone()));
+        }
+
+        let mut out = String::new();
+        let _ = writeln!(out, "DJI Mic Control diagnostic report");
+        let _ = writeln!(
+            out,
+            "app {app_version} · {} {} · {}",
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            diag::utc(now_millis())
+        );
+        let _ = writeln!(
+            out,
+            "supported receivers on the bus: {} · opened: {}{}",
+            probe.present,
+            probe.accessible,
+            if probe.permission_issue { " · permission denied" } else { "" }
+        );
+
+        let _ = writeln!(out, "\n== DJI USB devices ==");
+        #[cfg(target_os = "android")]
+        let _ = writeln!(out, "Not listed on Android: the system hands receivers to the app one by one.");
+        #[cfg(not(target_os = "android"))]
+        match nusb::list_devices().wait() {
+            Ok(devices) => {
+                let mut found = 0;
+                for info in devices {
+                    let named_dji = [info.manufacturer_string(), info.product_string()]
+                        .iter()
+                        .flatten()
+                        .any(|s| s.to_ascii_lowercase().contains("dji"));
+                    if info.vendor_id() != DJI_VENDOR && !named_dji {
+                        continue;
+                    }
+                    found += 1;
+                    hide.extend(info.serial_number().map(str::to_string));
+                    let place = bus_place(info.bus_id(), info.device_address());
+                    let _ = writeln!(
+                        out,
+                        "{:04x}:{:04x} \"{}\" by \"{}\" · {} · {}",
+                        info.vendor_id(),
+                        info.product_id(),
+                        info.product_string().unwrap_or("?"),
+                        info.manufacturer_string().unwrap_or("?"),
+                        info.speed().map(|s| format!("{s:?}").to_lowercase() + " speed").unwrap_or_else(|| "speed unknown".into()),
+                        place
+                    );
+                    let _ = writeln!(
+                        out,
+                        "  device class {:02x}/{:02x}/{:02x} ({})",
+                        info.class(),
+                        info.subclass(),
+                        info.protocol(),
+                        class_name(info.class())
+                    );
+                    for i in info.interfaces() {
+                        let _ = writeln!(
+                            out,
+                            "  interface {}: {:02x}/{:02x}/{:02x} ({}){}",
+                            i.interface_number(),
+                            i.class(),
+                            i.subclass(),
+                            i.protocol(),
+                            class_name(i.class()),
+                            i.interface_string().map(|s| format!(" \"{s}\"")).unwrap_or_default()
+                        );
+                    }
+                    let state = match model_for_usb(info.vendor_id(), info.product_id()) {
+                        None => "not a receiver this version of the app knows".to_string(),
+                        Some(model) => {
+                            let id = device_id(info.serial_number(), info.bus_id(), info.device_address());
+                            let state = if handles.contains_key(&id) {
+                                "opened".to_string()
+                            } else if let Some(why) = open_errors.get(&place) {
+                                format!("could not be opened: {why}")
+                            } else {
+                                "not opened".to_string()
+                            };
+                            format!("{} (interface {}) · {state}", model.name(), model.interface())
+                        }
+                    };
+                    let _ = writeln!(out, "  app: {state}");
+                }
+                if found == 0 {
+                    let _ = writeln!(out, "None found. Check the cable (some only charge) and that the receiver is on.");
+                }
+            }
+            Err(e) => {
+                let _ = writeln!(out, "USB scan failed: {e}");
+            }
+        }
+
+        let _ = writeln!(out, "\n== Devices the app opened ==");
+        if handles.is_empty() {
+            let _ = writeln!(out, "None.");
+        }
+        let mut ids: Vec<&String> = handles.keys().collect();
+        ids.sort();
+        for id in ids {
+            let h = &handles[id];
+            let shown = if id.starts_with("usb-") || id.starts_with("wifi:") { id.clone() } else { diag::redact(id) };
+            let last = h.actor.last_seen.load(Ordering::Relaxed);
+            let _ = writeln!(
+                out,
+                "{shown} · {} ({}) · {} · {}",
+                h.model().name(),
+                h.model().id(),
+                if h.actor.alive.load(Ordering::Relaxed) { "link open" } else { "link closed" },
+                if last == 0 {
+                    "no status decoded yet".to_string()
+                } else {
+                    format!("last status {} ago", diag::secs(now_millis().saturating_sub(last)))
+                }
+            );
+            h.actor.trace.lock().unwrap().render(&mut out, &hide);
+            let status = h.actor.status.lock().unwrap().clone();
+            if let Ok(mut json) = serde_json::to_value(&status) {
+                redact_serials(&mut json);
+                let text = serde_json::to_string_pretty(&json).unwrap_or_default();
+                let _ = writeln!(out, "  decoded status:");
+                for line in text.lines() {
+                    let _ = writeln!(out, "    {line}");
+                }
+            }
+        }
+        out
     }
 }

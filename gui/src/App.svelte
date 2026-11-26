@@ -7,6 +7,7 @@
   import { LOCALES } from "./lib/translations.js";
   import DevicePanel from "./lib/DevicePanel.svelte";
   import UdevModal from "./lib/UdevModal.svelte";
+  import DiagnosticsModal from "./lib/DiagnosticsModal.svelte";
   import SupportCard from "./lib/SupportCard.svelte";
   import RecordingsPanel from "./lib/RecordingsPanel.svelte";
   import WirelessWizard from "./lib/WirelessWizard.svelte";
@@ -91,6 +92,7 @@
   }
 
   let showUdev = $state(false);
+  let showDiagnostics = $state(false);
   let udev = $state(null);
 
   const devices = $derived(snap?.devices ?? []);
@@ -394,6 +396,13 @@
           />
         </svg>
       </button>
+      <button class="icon-btn" onclick={() => (showDiagnostics = true)} aria-label={$t("Diagnostic report")} title={$t("Diagnostic report")}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6" />
+          <path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.1-2.4 3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <circle cx="12" cy="16.9" r="1" fill="currentColor" />
+        </svg>
+      </button>
       <button class="icon-btn" onclick={toggleTheme} aria-label={$t("Toggle theme")} title={$t("Toggle theme")}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6" />
@@ -483,6 +492,9 @@
               </button>
             {/if}
           {/if}
+          <button class="ph-diag" onclick={() => (showDiagnostics = true)}>
+            {$t("Microphone not detected? Get a diagnostic report")}
+          </button>
         </div>
       </div>
     {/if}
@@ -513,6 +525,10 @@
 
 {#if showUdev && udev}
   <UdevModal help={udev} onclose={() => (showUdev = false)} />
+{/if}
+
+{#if showDiagnostics}
+  <DiagnosticsModal onclose={() => (showDiagnostics = false)} />
 {/if}
 
 <style>
@@ -788,6 +804,20 @@
   }
   .cta-air:hover {
     background: var(--raise);
+  }
+  .ph-diag {
+    display: block;
+    margin: 18px auto 0;
+    padding: 4px 6px;
+    border: none;
+    background: transparent;
+    color: var(--faint);
+    font-size: 12.5px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .ph-diag:hover {
+    color: var(--text);
   }
   .air-bar {
     flex: 0 0 auto;

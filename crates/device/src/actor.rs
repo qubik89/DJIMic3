@@ -20,6 +20,7 @@ use nusb::{Endpoint, Interface};
 use protocol::packet::Dialect;
 use protocol::{packet, DeviceModel, DeviceStatus};
 
+use crate::diag::Trace;
 use crate::error::{DeviceError, Result};
 
 fn hex(data: &[u8]) -> String {
@@ -48,6 +49,8 @@ pub struct Actor {
     pub model: Arc<Mutex<&'static dyn DeviceModel>>,
     /// Unix-millis timestamp of the last decoded heartbeat (0 = none yet).
     pub last_seen: Arc<AtomicU64>,
+    /// What the link has done, for the diagnostic report.
+    pub trace: Arc<Mutex<Trace>>,
 }
 
 /// Milliseconds since the Unix epoch.
@@ -213,17 +216,19 @@ pub fn spawn(model: &'static dyn DeviceModel, transport: Transport) -> Actor {
     let alive = Arc::new(AtomicBool::new(true));
     let last_seen = Arc::new(AtomicU64::new(0));
     let model_cell = Arc::new(Mutex::new(model));
+    let trace = Arc::new(Mutex::new(Trace::new()));
 
     let status_thread = status.clone();
     let model_thread = model_cell.clone();
     let alive_thread = alive.clone();
     let last_seen_thread = last_seen.clone();
+    let trace_thread = trace.clone();
     std::thread::spawn(move || {
-        future::block_on(run(model_thread, transport, cmd_rx, status_thread, last_seen_thread));
+        future::block_on(run(model_thread, transport, cmd_rx, status_thread, last_seen_thread, trace_thread));
         alive_thread.store(false, Ordering::Relaxed);
     });
 
-    Actor { cmd_tx, status, alive, last_seen, model: model_cell }
+    Actor { cmd_tx, status, alive, last_seen, model: model_cell, trace }
 }
 
 async fn run(
@@ -232,9 +237,18 @@ async fn run(
     cmd_rx: async_channel::Receiver<Command>,
     status: Arc<Mutex<DeviceStatus>>,
     last_seen: Arc<AtomicU64>,
+    trace: Arc<Mutex<Trace>>,
 ) {
     let mut model = *model_cell.lock().unwrap();
-    let Some(mut link) = Link::open(model, transport) else { return };
+    let Some(mut link) = Link::open(model, transport) else {
+        trace.lock().unwrap().event(format_args!(
+            "bulk endpoints {:#04x}/{:#04x} not found on interface {}",
+            model.bulk_in(),
+            model.bulk_out(),
+            model.interface()
+        ));
+        return;
+    };
     let mut seq: u16 = 1;
     let mut buf: Vec<u8> = Vec::with_capacity(1024);
     let debug = std::env::var_os("DJIMIC_DEBUG").is_some();
@@ -279,10 +293,13 @@ async fn run(
                     if let Some(p) = pending.take() {
                         let _ = p.resp.send(Ok(()));
                     }
+                    trace.lock().unwrap().event("link closed (unplugged or transfer error)");
                     break;
                 };
+                trace.lock().unwrap().read(&data);
                 buf.extend_from_slice(&data);
                 while let Some(frame) = packet::take_frame(&mut buf) {
+                    trace.lock().unwrap().frame(&frame);
                     if let Some(d) = packet::heartbeat_dialect(&frame) {
                         dialect = d;
                     }
@@ -296,6 +313,7 @@ async fn run(
                         if pending.as_ref().is_some_and(|p| p.seq == ack_seq) {
                             let p = pending.take().unwrap();
                             let code = frame.get(11).copied().unwrap_or(0);
+                            trace.lock().unwrap().outcome(if code == 0 { "ok".to_string() } else { format!("rejected ({code:#04x})") });
                             let _ = p.resp.send(if code == 0 {
                                 Ok(())
                             } else {
@@ -323,6 +341,7 @@ async fn run(
                                 if debug {
                                     eprintln!("[model] {} -> {}", model.id(), refined.id());
                                 }
+                                trace.lock().unwrap().event(format_args!("model {} -> {}", model.id(), refined.id()));
                                 model = refined;
                                 *model_cell.lock().unwrap() = refined;
                                 new_status.model_id = refined.id().to_string();
@@ -342,6 +361,7 @@ async fn run(
                     if let Some(pkt) = connect_queue.pop() {
                         let pkt_seq = u16::from_le_bytes([pkt[6], pkt[7]]);
                         let (resp, _) = std::sync::mpsc::channel();
+                        trace.lock().unwrap().command("connect packet".into(), &pkt);
                         if link.write(pkt.clone()).await.is_ok() {
                             pending = Some(Pending {
                                 seq: pkt_seq,
@@ -361,11 +381,13 @@ async fn run(
                     if p.reads_left == 0 {
                         if p.attempts_left == 0 {
                             let p = pending.take().unwrap();
+                            trace.lock().unwrap().outcome("no answer after retries");
                             let _ = p.resp.send(Err(DeviceError::NoAck));
                         } else {
                             p.attempts_left -= 1;
                             p.reads_left = ACK_WAIT_READS;
                             if let Err(e) = link.write(p.packet.clone()).await {
+                                trace.lock().unwrap().outcome(format!("write failed: {e}"));
                                 let p = pending.take().unwrap();
                                 let _ = p.resp.send(Err(DeviceError::Usb(e)));
                             }
@@ -378,6 +400,8 @@ async fn run(
                     Some(pkt) => {
                         let sent_seq = seq;
                         seq = seq.wrapping_add(1);
+                        let tx = cmd.tx.map(|t| format!(" (TX{})", t + 1)).unwrap_or_default();
+                        trace.lock().unwrap().command(format!("set {}={}{tx}", cmd.setting_id, cmd.value), &pkt);
                         match link.write(pkt.clone()).await {
                             Ok(()) => {
                                 pending = Some(Pending {
@@ -389,11 +413,16 @@ async fn run(
                                 });
                             }
                             Err(e) => {
+                                trace.lock().unwrap().outcome(format!("write failed: {e}"));
                                 let _ = cmd.resp.send(Err(DeviceError::Usb(e)));
                             }
                         }
                     }
                     None => {
+                        trace
+                            .lock()
+                            .unwrap()
+                            .event(format_args!("no packet for set {}={}", cmd.setting_id, cmd.value));
                         let _ = cmd
                             .resp
                             .send(Err(DeviceError::UnknownSetting(cmd.setting_id.clone())));

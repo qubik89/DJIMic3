@@ -653,6 +653,8 @@ pub fn run() {
             commands::set_tx_setting,
             commands::udev_help,
             commands::open_support,
+            commands::diagnostics,
+            commands::open_issues,
             recordings::recordings_scan,
             recordings::recordings_default_dest,
             recordings::recordings_pick_dest,

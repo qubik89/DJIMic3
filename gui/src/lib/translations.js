@@ -1870,6 +1870,63 @@ Object.assign(nl, {
   "Dual-File Recording": "Opname in twee bestanden",
 });
 
+// Diagnostic report
+Object.assign(es, {
+  "Diagnostic report": "Informe de diagnóstico",
+  "If your microphone isn't detected or something doesn't work, send this report along with a short description of the problem. It lists the DJI devices connected over USB and what they answered. Serial numbers are cut to their last four characters.": "Si no se detecta tu micrófono o algo no funciona, envía este informe junto con una breve descripción del problema. Incluye los dispositivos DJI conectados por USB y lo que han respondido. Los números de serie se recortan a sus cuatro últimos caracteres.",
+  "Refresh": "Actualizar",
+  "Report a problem on GitHub": "Avisar de un problema en GitHub",
+  "Copy report": "Copiar informe",
+  "Collecting…": "Recopilando…",
+  "Couldn't create the report: {detail}": "No se ha podido crear el informe: {detail}",
+  "Couldn't copy automatically. The text is selected: copy it by hand.": "No se ha podido copiar automáticamente. El texto está seleccionado: cópialo a mano.",
+  "Microphone not detected? Get a diagnostic report": "¿No se detecta el micrófono? Obtén un informe de diagnóstico",
+});
+Object.assign(fr, {
+  "Diagnostic report": "Rapport de diagnostic",
+  "If your microphone isn't detected or something doesn't work, send this report along with a short description of the problem. It lists the DJI devices connected over USB and what they answered. Serial numbers are cut to their last four characters.": "Si votre micro n'est pas détecté ou si quelque chose ne fonctionne pas, envoyez ce rapport avec une courte description du problème. Il liste les appareils DJI connectés en USB et ce qu'ils ont répondu. Les numéros de série sont réduits à leurs quatre derniers caractères.",
+  "Refresh": "Actualiser",
+  "Report a problem on GitHub": "Signaler un problème sur GitHub",
+  "Copy report": "Copier le rapport",
+  "Collecting…": "Collecte en cours…",
+  "Couldn't create the report: {detail}": "Impossible de créer le rapport : {detail}",
+  "Couldn't copy automatically. The text is selected: copy it by hand.": "Copie automatique impossible. Le texte est sélectionné : copiez-le manuellement.",
+  "Microphone not detected? Get a diagnostic report": "Micro non détecté ? Obtenez un rapport de diagnostic",
+});
+Object.assign(it, {
+  "Diagnostic report": "Rapporto diagnostico",
+  "If your microphone isn't detected or something doesn't work, send this report along with a short description of the problem. It lists the DJI devices connected over USB and what they answered. Serial numbers are cut to their last four characters.": "Se il microfono non viene rilevato o qualcosa non funziona, invia questo rapporto con una breve descrizione del problema. Elenca i dispositivi DJI collegati via USB e cosa hanno risposto. I numeri di serie sono ridotti agli ultimi quattro caratteri.",
+  "Refresh": "Aggiorna",
+  "Report a problem on GitHub": "Segnala un problema su GitHub",
+  "Copy report": "Copia rapporto",
+  "Collecting…": "Raccolta in corso…",
+  "Couldn't create the report: {detail}": "Impossibile creare il rapporto: {detail}",
+  "Couldn't copy automatically. The text is selected: copy it by hand.": "Impossibile copiare automaticamente. Il testo è selezionato: copialo a mano.",
+  "Microphone not detected? Get a diagnostic report": "Microfono non rilevato? Ottieni un rapporto diagnostico",
+});
+Object.assign(de, {
+  "Diagnostic report": "Diagnosebericht",
+  "If your microphone isn't detected or something doesn't work, send this report along with a short description of the problem. It lists the DJI devices connected over USB and what they answered. Serial numbers are cut to their last four characters.": "Wenn dein Mikrofon nicht erkannt wird oder etwas nicht funktioniert, sende diesen Bericht mit einer kurzen Beschreibung des Problems. Er listet die per USB verbundenen DJI-Geräte auf und was sie geantwortet haben. Seriennummern werden auf ihre letzten vier Zeichen gekürzt.",
+  "Refresh": "Aktualisieren",
+  "Report a problem on GitHub": "Problem auf GitHub melden",
+  "Copy report": "Bericht kopieren",
+  "Collecting…": "Wird gesammelt…",
+  "Couldn't create the report: {detail}": "Bericht konnte nicht erstellt werden: {detail}",
+  "Couldn't copy automatically. The text is selected: copy it by hand.": "Automatisches Kopieren nicht möglich. Der Text ist markiert: kopiere ihn von Hand.",
+  "Microphone not detected? Get a diagnostic report": "Mikrofon nicht erkannt? Diagnosebericht abrufen",
+});
+Object.assign(nl, {
+  "Diagnostic report": "Diagnoserapport",
+  "If your microphone isn't detected or something doesn't work, send this report along with a short description of the problem. It lists the DJI devices connected over USB and what they answered. Serial numbers are cut to their last four characters.": "Wordt je microfoon niet herkend of werkt er iets niet, stuur dan dit rapport mee met een korte beschrijving van het probleem. Het toont de DJI-apparaten die via USB zijn aangesloten en wat ze antwoordden. Serienummers worden ingekort tot hun laatste vier tekens.",
+  "Refresh": "Vernieuwen",
+  "Report a problem on GitHub": "Probleem melden op GitHub",
+  "Copy report": "Rapport kopiëren",
+  "Collecting…": "Verzamelen…",
+  "Couldn't create the report: {detail}": "Kan het rapport niet maken: {detail}",
+  "Couldn't copy automatically. The text is selected: copy it by hand.": "Automatisch kopiëren lukt niet. De tekst is geselecteerd: kopieer hem handmatig.",
+  "Microphone not detected? Get a diagnostic report": "Microfoon niet herkend? Vraag een diagnoserapport op",
+});
+
 export const DICTIONARIES = { en: {}, "es-ES": es, fr, it, de, nl };
 
 /** Translate an English source string, filling `{name}` placeholders. */

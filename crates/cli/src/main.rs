@@ -56,6 +56,9 @@ enum Command {
         #[arg(long)]
         tx: Option<usize>,
     },
+    /// Print a troubleshooting report (DJI USB devices, what they sent and
+    /// how they answered) to paste into a bug report.
+    Diagnose,
 }
 
 fn main() -> Result<()> {
@@ -65,6 +68,12 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::List => list(&mgr, cli.json),
+        Command::Diagnose => {
+            // Give open receivers a few seconds to stream and identify.
+            std::thread::sleep(Duration::from_secs(3));
+            print!("{}", mgr.diagnostics(env!("CARGO_PKG_VERSION")));
+            Ok(())
+        }
         Command::Status => {
             let id = resolve(&mgr, cli.device.as_deref())?;
             let status = wait_identity(&mgr, &id, wait_connected(&mgr, &id)?);
