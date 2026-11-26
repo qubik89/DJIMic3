@@ -8,8 +8,9 @@ Control your DJI wireless microphones from the computer over USB — no phone,
 no DJI Mimo app. Plug the receiver in and every setting, live levels, mute,
 internal recording and battery status are right there.
 
-This is a fork of [ShadowBitBasher/DJI-Mic-Control](https://github.com/ShadowBitBasher/DJI-Mic-Control)
-that adds **DJI Mic 3** support, a redesigned interface and six languages.
+Based on [ShadowBitBasher/DJI-Mic-Control](https://github.com/ShadowBitBasher/DJI-Mic-Control),
+now developed independently, adding **DJI Mic 3** support, a redesigned
+interface and six languages.
 
 ![DJI Mic Control — dark theme](docs/screenshots/main-dark.png)
 
@@ -54,7 +55,8 @@ Latest release: **[all files and notes](https://github.com/qubik89/DJIMic3/relea
 | Linux (x64) | [.deb](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_amd64.deb) · [.rpm](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_x86_64.rpm) · [AppImage](https://github.com/qubik89/DJIMic3/releases/latest/download/DJI-Mic-Control_Linux_amd64.AppImage) | Built automatically, not yet tested on hardware |
 | Android 7+ (arm64) | APK, [built from source](#android) for now | Preview, not yet tested on hardware |
 
-Checksums are in `SHA256SUMS.txt` on each release.
+Checksums are in `SHA256SUMS.txt` on each release. Windows builds follow this
+[code signing policy](docs/code-signing-policy.md).
 
 **macOS**
 
@@ -228,7 +230,9 @@ NetworkManager at run time for the wireless features.
 
 On macOS, `build-release.sh` can also sign the app with a Developer ID
 certificate and notarize it with Apple: see
-[docs/macos-signing.md](docs/macos-signing.md).
+[docs/macos-signing.md](docs/macos-signing.md). Windows releases are signed in
+GitHub Actions through SignPath: see
+[docs/windows-signing.md](docs/windows-signing.md).
 
 For development, from `gui/`:
 

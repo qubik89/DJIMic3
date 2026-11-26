@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  actions: read # SignPath fetches the artifacts to sign with the job's token
 
 env:
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -81,10 +82,88 @@ jobs:
         if: matrix.platform == 'linux'
         run: ./build-release.sh
 
-      - name: Build (Windows)
+      # Windows: compile, sign the exe, package that signed exe into the
+      # installer, sign the installer. Signing goes through SignPath and runs
+      # when the SIGNPATH_ORGANIZATION_ID variable is set (see
+      # docs/windows-signing.md); unsigned otherwise. Each signing request
+      # waits for someone to approve it in SignPath.
+      - name: Compile (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
-        run: ./build-release.ps1
+        run: ./build-release.ps1 -Step compile
+
+      - name: Version to sign (Windows)
+        id: version
+        if: matrix.platform == 'windows' && vars.SIGNPATH_ORGANIZATION_ID != ''
+        shell: pwsh
+        run: |
+          $v = (Get-Content gui/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Upload the exe for signing
+        id: unsigned-exe
+        if: steps.version.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-exe
+          path: target/release/djimic-gui.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign the exe
+        if: steps.unsigned-exe.outcome == 'success'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed/exe
+
+      - name: Use the signed exe
+        if: steps.unsigned-exe.outcome == 'success'
+        shell: pwsh
+        run: Copy-Item signed/exe/djimic-gui.exe target/release/djimic-gui.exe -Force
+
+      - name: Bundle (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: ./build-release.ps1 -Step bundle
+
+      - name: Upload the installer for signing
+        id: unsigned-setup
+        if: steps.unsigned-exe.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-setup
+          path: Release/windows/*-setup.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign the installer
+        if: steps.unsigned-setup.outcome == 'success'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned-setup.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed/setup
+
+      - name: Use the signed installer
+        if: steps.unsigned-setup.outcome == 'success'
+        shell: pwsh
+        run: |
+          Copy-Item signed/setup/*-setup.exe Release/windows/ -Force
+          ./build-release.ps1 -Step verify
 
       # Stable file names so README links to releases/latest/download keep working.
       - name: Rename artifacts
@@ -104,9 +183,11 @@ jobs:
           esac
           ls -l dist
 
+      # "release-" prefix: publish only downloads these, not the unsigned
+      # files uploaded for signing.
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.platform }}
+          name: release-${{ matrix.platform }}
           path: dist/*
           if-no-files-found: error
 
@@ -117,6 +198,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: release-*
           path: dist
           merge-multiple: true
 
@@ -140,6 +222,7 @@ jobs:
             notes="$RUNNER_TEMP/notes.md"
             gh api "repos/$GH_REPO/releases/generate-notes" -f tag_name="$TAG" --jq .body > "$notes"
             printf '\n---\n\nNew here? Setup guide: https://miccontrol.app/en/dji-mic-3-mac/ · Troubleshooting: https://miccontrol.app/en/dji-mic-3-not-recognized-mac/\n' >> "$notes"
+            printf '\nCode signing policy: https://github.com/%s/blob/main/docs/code-signing-policy.md\n' "$GH_REPO" >> "$notes"
             gh release create "$TAG" * --title "DJI Mic Control ${TAG#v}" --notes-file "$notes"
           fi
 
