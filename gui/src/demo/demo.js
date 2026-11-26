@@ -32,7 +32,7 @@ localStorage.removeItem("djimic.recordings.kind");
 // What the diagnostics window shows, in the shape `DeviceManager::diagnostics`
 // writes it.
 const DIAGNOSTICS = `DJI Mic Control diagnostic report
-app 1.6.0 · macos aarch64 · 2026-11-26 10:12 UTC
+app 1.7.0 · macos aarch64 · 2026-11-26 10:12 UTC
 supported receivers on the bus: 1 · opened: 1
 
 == DJI USB devices ==
